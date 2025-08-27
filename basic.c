@@ -4,14 +4,15 @@
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 // Globals
-size_t temp_allocated = 0;
-uint8_t temp_buffer[MAX_TEMP_BUFFER];
+_Thread_local size_t temp_allocated = 0;
+_Thread_local uint8_t temp_buffer[MAX_TEMP_BUFFER];
 
 size_t align(size_t size) {
   if (size % 8 == 0)
@@ -163,8 +164,8 @@ String sv_new(char *str) {
   return sv;
 }
 
-String* sv_heap_new(String sv) {
-  String* sv_ptr = MEM_REALLOC(NULL, sizeof(String));
+String *sv_heap_new(String sv) {
+  String *sv_ptr = MEM_REALLOC(NULL, sizeof(String));
   *sv_ptr = sv;
   return sv_ptr;
 }
@@ -233,13 +234,11 @@ StringPair sv_split_str(String sv, char *str) {
     result.second = StringNil;
     return result;
   }
-  String pat = sv_new2(str, n);
 
   size_t i = 0;
   bool found = false;
   for (i = 0; i + n <= sv.length; i++) {
-    String target = sv_new2(&(sv.items[i]), n);
-    if (sv_equal(pat, target)) {
+    if (strncmp(str, &sv.items[i], n)) {
       found = true;
       break;
     }
@@ -903,16 +902,13 @@ size_t string_key_hash(int cap, void *a) {
 }
 
 HashTable http_headers_init(void) {
-  return hash_table_init(20, string_key_eq, string_key_hash);
+  return hash_table_init(HTTP_HEADER_CAPACITY, string_key_eq, string_key_hash);
 }
 
 bool http_headers_set(HashTable *headers, String key, String value) {
   assert(headers != NULL);
-  return hash_table_set(
-    headers, 
-    sv_heap_new(sv_clone(key)),
-    sv_heap_new(sv_clone(value))
-  );
+  return hash_table_set(headers, sv_heap_new(sv_clone(key)),
+                        sv_heap_new(sv_clone(value)));
 }
 
 void http_headers_free(HashTable *headers) {
@@ -987,8 +983,8 @@ Error http_parse_request(int client, HttpRequest *request) {
   String request_str = sv_new2(buffer, n);
 
   StringPair p0 = sv_split_str(request_str, CRLF); // status_line vs rest
-  StringPair p1 = sv_split_delim(p0.first, ' ');  // method vs rest
-  StringPair p2 = sv_split_delim(p1.second, ' '); // path vs rest
+  StringPair p1 = sv_split_delim(p0.first, ' ');   // method vs rest
+  StringPair p2 = sv_split_delim(p1.second, ' ');  // path vs rest
 
   request->method = sv_clone(p1.first);
   request->path = sv_clone(p2.first);
@@ -1008,14 +1004,50 @@ void http_response_encode(HttpResponse *response, StringBuilder *sb) {
   for (int i = 0; i < response->headers.capacity; i++) {
     HashTableEntry entry = response->headers.entries[i];
     if (entry.key != NULL) {
-      sb_push(sb, *(String*)entry.key);
+      sb_push(sb, *(String *)entry.key);
       sb_push_char(sb, ':');
-      sb_push(sb, *(String*)entry.value);
+      sb_push(sb, *(String *)entry.value);
       sb_push(sb, CRLF);
     }
   }
   sb_push(sb, CRLF);
   sb_push(sb, response->body);
+}
+
+typedef struct {
+  int clientfd;
+  HttpListenCallback callback;
+} ClientThreadArgs;
+
+void *handle_client(void *arg) {
+  ClientThreadArgs *args = arg;
+  int clientfd = args->clientfd;
+  HttpListenCallback callback = args->callback;
+  MEM_FREE(arg);
+
+  HttpRequest request = {0};
+  Error err = http_parse_request(clientfd, &request);
+  if (!has_error(err)) {
+    StringBuilder sb = {0};
+    HttpResponse response = callback(&request);
+    http_response_encode(&response, &sb);
+
+    int n = write(clientfd, sb.items, sb.length);
+    if (n < 0) {
+      fprintf(stderr, "write failed: %s", strerror(errno));
+    }
+
+    // Cleanup
+    sb_free(&sb);
+    if (response.free_body_after_use)
+      MEM_FREE(response.body.items);
+    http_headers_free(&response.headers);
+    MEM_FREE(request.method.items);
+    MEM_FREE(request.path.items);
+  }
+
+  close(clientfd);
+  return NULL;
 }
 
 Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
@@ -1028,46 +1060,24 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
   }
 
   while (true) {
-    int client = accept(server->sockfd, NULL, NULL);
-    if (client < 0) {
+    int clientfd = accept(server->sockfd, NULL, NULL);
+    if (clientfd < 0) {
       fprintf(stderr, "accept failed: %s", strerror(errno));
       continue;
     }
 
-    int pid = fork();
-    if (pid == 0) {
-      close(server->sockfd); // Client doesnt need server socket
+    ClientThreadArgs *arg = MEM_REALLOC(NULL, sizeof(ClientThreadArgs));
+    arg->clientfd = clientfd;
+    arg->callback = callback;
 
-      HttpRequest request = {0};
-      Error err = http_parse_request(client, &request);
-      if (!has_error(err)) {
-        StringBuilder sb = {0};
-        HttpResponse response = callback(&request);
-        http_response_encode(&response, &sb);
-
-        int n = write(client, sb.items, sb.length);
-        if (n < 0) {
-          fprintf(stderr, "write failed: %s", strerror(errno));
-        }
-        sb_free(&sb);
-
-        // Freeing memory after use
-        if (response.free_body_after_use) {
-          MEM_FREE(response.body.items);
-        }
-        
-        http_headers_free(&response.headers);
-        
-        // Free cloned request strings
-        if (request.method.items) MEM_FREE(request.method.items);
-        if (request.path.items) MEM_FREE(request.path.items);
-      }
-
-      close(client);
-      exit(0);
-    } else {
-      close(client);
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, handle_client, arg) < 0) {
+      close(clientfd);
+      fprintf(stderr, "pthread create: %s", strerror(errno));
+      continue;
     }
+
+    pthread_detach(tid);
   }
 
   return ErrorNil;
