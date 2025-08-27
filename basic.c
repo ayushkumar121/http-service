@@ -985,6 +985,7 @@ Error http_parse_request(int client, HttpRequest *request) {
   StringPair p1 = sv_split_delim(p0.first, ' ');   // method vs rest
   StringPair p2 = sv_split_delim(p1.second, ' ');  // path vs rest
 
+  request->id = getpid();
   request->method = sv_clone(p1.first);
   request->path = sv_clone(p2.first);
 

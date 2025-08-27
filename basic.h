@@ -219,6 +219,7 @@ typedef struct {
 } HttpServer;
 
 typedef struct {
+  int id;
   String method;
   String path;
 } HttpRequest;
