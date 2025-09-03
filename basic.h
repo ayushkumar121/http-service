@@ -50,9 +50,9 @@
   } while (0)
 
 // Temp Allocator
-#define MAX_TEMP_BUFFER 4 * 1024
+#define TEMP_BUFFER_CAP 4 * 1024
 void *talloc(size_t bytes);
-void tfree();
+void treset();
 
 // String
 typedef struct {
@@ -70,17 +70,6 @@ typedef struct {
 
 void sb_resize(StringBuilder *sb, size_t new_capacity);
 void sb_free(StringBuilder *sb);
-
-// NOTE: please use sb_push_char to push char
-#define sb_push(sb, val)                                                       \
-  _Generic((val),                                                              \
-      char *: sb_push_str,                                                     \
-      int: sb_push_long,                                                       \
-      long: sb_push_long,                                                      \
-      unsigned long: sb_push_long,                                             \
-      float: sb_push_double,                                                   \
-      double: sb_push_double,                                                  \
-      String: sb_push_sv)(sb, val)
 
 void sb_push_str(StringBuilder *sb, char *str);
 void sb_push_sv(StringBuilder *sb, String sv);

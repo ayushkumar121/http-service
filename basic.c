@@ -11,7 +11,7 @@
 
 // Globals
 _Thread_local size_t temp_allocated = 0;
-_Thread_local uint8_t temp_buffer[MAX_TEMP_BUFFER];
+_Thread_local uint8_t temp_buffer[TEMP_BUFFER_CAP];
 
 size_t align(size_t size) {
   if (size % 8 == 0)
@@ -19,14 +19,21 @@ size_t align(size_t size) {
   return size + (8 - size % 8);
 }
 
-void *talloc(size_t size) {
-  size_t aligned = align(size);
-  void *ptr = &temp_buffer[temp_allocated];
-  temp_allocated = (temp_allocated + aligned) % MAX_TEMP_BUFFER;
-  return ptr;
+void* talloc(size_t n) {
+	size_t size = align(n);
+	assert(size <= TEMP_BUFFER_CAP);
+
+	if (temp_allocated + size >= TEMP_BUFFER_CAP) {
+		temp_allocated = 0;
+	}
+
+	void* ptr = &temp_buffer[temp_allocated];
+	temp_allocated += size;
+	memset(ptr, 0, size);
+	return ptr;
 }
 
-void tfree() { temp_allocated = 0; }
+void treset() { temp_allocated = 0; }
 
 // Error Handling
 
@@ -773,20 +780,20 @@ void sb_push_whitespace(StringBuilder *sb, int indent) {
 void _json_encode(JsonValue json, StringBuilder *sb, int pp, int indent) {
   switch (json.type) {
   case JSON_NULL:
-    sb_push(sb, "null");
+    sb_push_str(sb, "null");
     break;
   case JSON_TRUE:
-    sb_push(sb, "true");
+    sb_push_str(sb, "true");
     break;
   case JSON_FALSE:
-    sb_push(sb, "false");
+    sb_push_str(sb, "false");
     break;
   case JSON_NUMBER:
-    sb_push(sb, json.value.number);
+    sb_push_double(sb, json.value.number);
     break;
   case JSON_STRING:
     sb_push_char(sb, '\"');
-    sb_push(sb, json.value.string);
+    sb_push_sv(sb, json.value.string);
     sb_push_char(sb, '\"');
     break;
 
@@ -995,23 +1002,23 @@ defer:
 }
 
 void http_response_encode(HttpResponse *response, StringBuilder *sb) {
-  sb_push(sb, "HTTP/1.1 ");
-  sb_push(sb, response->status_code);
-  sb_push(sb, " " CRLF);
-  sb_push(sb, "Content-Length:");
-  sb_push(sb, response->body.length);
-  sb_push(sb, CRLF);
+  sb_push_str(sb, "HTTP/1.1 ");
+  sb_push_long(sb, response->status_code);
+  sb_push_str(sb, " " CRLF);
+  sb_push_str(sb, "Content-Length:");
+  sb_push_long(sb, response->body.length);
+  sb_push_str(sb, CRLF);
   for (int i = 0; i < response->headers.capacity; i++) {
     HashTableEntry entry = response->headers.entries[i];
     if (entry.key != NULL) {
-      sb_push(sb, *(String *)entry.key);
+      sb_push_sv(sb, *(String *)entry.key);
       sb_push_char(sb, ':');
-      sb_push(sb, *(String *)entry.value);
-      sb_push(sb, CRLF);
+      sb_push_sv(sb, *(String *)entry.value);
+      sb_push_str(sb, CRLF);
     }
   }
-  sb_push(sb, CRLF);
-  sb_push(sb, response->body);
+  sb_push_str(sb, CRLF);
+  sb_push_sv(sb, response->body);
 }
 
 typedef struct {
