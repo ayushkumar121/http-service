@@ -2,12 +2,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <time.h>
 
 HttpResponse json_response(int status, HttpRequest *request, JsonValue *json) {
-  HttpResponse response = {0};
-  response.status_code = status;
-  response.headers = http_headers_init();
+  HttpResponse response = http_response_init(status);
 
   http_headers_set(&response.headers, sv_new("Request-Id"), tprintf("%d", request->id));
   http_headers_set(&response.headers, sv_new("Content-Type"), sv_new("application/json"));

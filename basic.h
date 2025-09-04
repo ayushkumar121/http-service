@@ -127,13 +127,13 @@ void hash_table_free(HashTable *v);
 
 // Error Handling
 typedef struct {
-  char *message;
+  String message;
 } Error;
 
 #define MAX_ERROR_LENGTH 500
 #define ErrorNil (Error){0}
 
-Error error(char *message);
+Error error(String message);
 Error errorf(const char *format, ...) __attribute__((format(printf, 1, 2)));
 bool has_error(Error err);
 
@@ -142,8 +142,8 @@ void _try(Error err, char* file, int line);
 
 // JSON Encoding & Decoding
 
-#define JsonErrorEOF (Error){"json eof"}
-#define JsonErrorUnexpectedToken (Error){"json unexpected token"}
+#define JsonErrorEOF (Error){sv_new("json eof")}
+#define JsonErrorUnexpectedToken (Error){sv_new("json unexpected token")}
 
 typedef enum {
   JSON_NULL,
@@ -232,5 +232,7 @@ void http_headers_free(HashTable *headers);
 Error http_server_init(HttpServer *server, int port);
 Error http_server_listen(HttpServer *server, HttpListenCallback callback);
 void http_server_free(HttpServer *server);
+
+HttpResponse http_response_init(int status_code);
 
 #endif // BASIC_H

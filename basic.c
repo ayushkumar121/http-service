@@ -37,7 +37,7 @@ void treset() { temp_allocated = 0; }
 
 // Error Handling
 
-Error error(char *message) { return (Error){.message = message}; }
+Error error(String message) { return (Error){.message = message}; }
 
 Error errorf(const char *format, ...) {
   va_list args;
@@ -46,14 +46,14 @@ Error errorf(const char *format, ...) {
   String str = tvprintf(format, args);
   va_end(args);
 
-  return error(str.items);
+  return error(str);
 }
 
-bool has_error(Error err) { return err.message != 0; }
+bool has_error(Error err) { return err.message.length > 0; }
 
 void _try(Error err, char *file, int line) {
   if (has_error(err)) {
-    fprintf(stderr, "%s:%d: thread paniced: %s\n", file, line, err.message);
+    fprintf(stderr, "%s:%d: thread paniced: "SV_Fmt"\n", file, line, SV_Arg(err.message));
     exit(1);
   }
 }
@@ -470,7 +470,7 @@ JsonValue *json_new_object(void) {
 }
 
 Error json_error(Error cause, String s) {
-  return errorf("%s '%.5s...'", cause.message, s.items);
+  return errorf(SV_Fmt ", "SV_Fmt, SV_Arg(cause.message), SV_Arg(s));
 }
 
 bool json_is_end_char(char ch) { return ch == ',' || ch == ']' || ch == '}'; }
@@ -1091,3 +1091,10 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
 }
 
 void http_server_free(HttpServer *server) { close(server->sockfd); }
+
+HttpResponse http_response_init(int status_code) {
+  HttpResponse response = {0};
+  response.headers = http_headers_init();
+  response.status_code = status_code;
+  return response;
+}
