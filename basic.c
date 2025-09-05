@@ -244,7 +244,7 @@ StringPair sv_split_str(String sv, char *str) {
   size_t i = 0;
   bool found = false;
   for (i = 0; i + n <= sv.length; i++) {
-    if (strncmp(str, &sv.items[i], n)) {
+    if (strncmp(str, &sv.items[i], n) == 0) {
       found = true;
       break;
     }
