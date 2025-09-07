@@ -29,7 +29,7 @@
   do {                                                                         \
     if ((array)->capacity < (array)->length + 1) {                             \
       (array)->capacity =                                                      \
-          ((array)->capacity == 0) ? ARRAY_INIT_CAP : (array)->capacity * 2;   \
+          ((array)->capacity == 0) ? ARRAY_INIT_CAP : (array)->capacity * 1.5;   \
       (array)->items = MEM_REALLOC(                                            \
           (array)->items, (array)->capacity * sizeof(*(array)->items));        \
     }                                                                          \

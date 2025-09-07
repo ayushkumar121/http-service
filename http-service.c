@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
     .backlog = 1024, 
     .header_capacity = 20
   }));
+  fprintf(stderr, "INFO: Server initialized\n");
   try(http_server_listen(&server, http_listen_callback));
   http_server_free(&server);
   return 0;

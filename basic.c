@@ -1019,39 +1019,67 @@ void http_response_write(int clientfd, char *buffer, size_t length) {
   }
 }
 
-#define HTTP_READ_BUFFER_SIZE 100
+#define HTTP_READ_BUFFER_SIZE 512
 
-Error http_parse_request(int client, HttpRequest *request) {
+typedef enum {
+  HttpErrorNil,
+  HttpErrorEOF,
+  HttpErrorConnectionReset,
+  HttpErrorRead,
+  HttpErrorParse,
+  HttpErrorUnknown,
+} HttpError;
+
+String http_error_to_string(HttpError err) {
+  switch (err) {
+  case HttpErrorNil:
+    return sv_new("nil");
+  case HttpErrorEOF:
+    return sv_new("eof");
+  case HttpErrorConnectionReset:
+    return sv_new("connection closed");
+  case HttpErrorRead:
+    return sv_new("read error");
+  case HttpErrorParse:
+    return sv_new("parse error");
+  case HttpErrorUnknown:
+    return sv_new("unknown");
+  }
+}
+
+HttpError http_parse_request(int client, StringBuilder *sb, HttpRequest *request) {
   assert(request != NULL);
 
-  StringBuilder sb = {0};
   ssize_t header_end = -1;
-
   char *buffer = talloc(HTTP_READ_BUFFER_SIZE); // Temp allocated buffer
 
   while (true) {
     int n = read(client, buffer, HTTP_READ_BUFFER_SIZE);
     if (n < 0) {
-      sb_free(&sb);
-      return errorf("http read error:%s", strerror(errno));
+      if (errno == ECONNRESET) {
+        return HttpErrorConnectionReset;
+      }
+      return HttpErrorRead;
     }
     if (n == 0) {
-      sb_free(&sb);
-      return error("http read error: eof ");
+      return HttpErrorEOF;
     }
-    sb_push_sv(&sb, sv_new2(buffer, n));
-    header_end = sv_find(sb_to_sv(&sb), CRLF CRLF);
+    sb_push_sv(sb, sv_new2(buffer, n));
+    header_end = sv_find(sb_to_sv(sb), CRLF CRLF);
     if (header_end != -1) {
       break;
     }
   }
 
-  String request_str = sb_to_sv(&sb);
+  String request_str = sb_to_sv(sb);
 
   // Parsing the request
   StringPair p0 = sv_split_str(request_str, CRLF); // (status_line vs rest)
   StringPair p1 = sv_split_delim(p0.first, ' ');   // (method vs rest)
   StringPair p2 = sv_split_delim(p1.second, ' ');  // (path vs rest)
+  if (p0.first.length == 0 || p1.first.length == 0 || p2.first.length == 0) {
+    return HttpErrorParse;
+  }
 
   request->id = getpid();
   request->method = p1.first;
@@ -1080,26 +1108,27 @@ Error http_parse_request(int client, HttpRequest *request) {
   }
 
   // Read body if not read yet
-  while (sb.length < (header_end + 4 + content_length)) {
-    int to_read = header_end + 4 + content_length - sb.length;
+  while (sb->length < (header_end + 4 + content_length)) {
+    int to_read = header_end + 4 + content_length - sb->length;
     if (to_read > HTTP_READ_BUFFER_SIZE) {
       to_read = HTTP_READ_BUFFER_SIZE;
     }
     int n = read(client, buffer, to_read);
     if (n < 0) {
-      sb_free(&sb);
-      return errorf("http read error:%s", strerror(errno));
+      if (errno == ECONNRESET || errno == EPIPE) {
+        return HttpErrorConnectionReset;
+      }
+      return HttpErrorRead;
     }
     if (n == 0) {
-      sb_free(&sb);
-      return error("http read error: eof ");
+      return HttpErrorEOF;
     }
-    sb_push_sv(&sb, sv_new2(buffer, n));
+    sb_push_sv(sb, sv_new2(buffer, n));
   }
-  request->body =
-      sv_new2(sb.items + header_end + 4, sb.length - header_end - 4);
-  request->raw_request = sb_to_sv(&sb);
-  return ErrorNil;
+  request->body = sv_new2(sb->items + header_end + 4, content_length);
+  request->raw_request = sb_to_sv(sb);
+
+  return 0;
 }
 
 String http_status_code_to_string(int status_code) {
@@ -1161,27 +1190,36 @@ void *handle_client(void *arg) {
   HttpListenCallback callback = args->callback;
   MEM_FREE(arg);
 
+  StringBuilder request_sb = {0};
+  StringBuilder response_sb = {0};
+
+  sb_resize(&request_sb, HTTP_READ_BUFFER_SIZE);
+  sb_resize(&response_sb, HTTP_READ_BUFFER_SIZE);
+
   while (true) {
+    request_sb.length = 0;
+    response_sb.length = 0;
+
     HttpRequest request = {0};
-    Error err = http_parse_request(clientfd, &request);
-    if (has_error(err)) {
-      fprintf(stderr, "http parse request failed: " SV_Fmt "\n",
-              SV_Arg(err.message));
+    HttpError err = http_parse_request(clientfd, &request_sb, &request);
+    if (err == HttpErrorEOF || err == HttpErrorConnectionReset) {
+      break;
+    }
+    if (err != HttpErrorNil) {
+      fprintf(stderr, "ERROR: http parse request failed: " SV_Fmt "\n",
+              SV_Arg(http_error_to_string(err)));
       break;
     }
 
-    StringBuilder sb = {0};
     HttpResponse response = callback(&request);
 
-    http_response_encode(&response, &sb);
-    http_response_write(clientfd, sb.items, sb.length);
+    http_response_encode(&response, &response_sb);
+    http_response_write(clientfd, response_sb.items, response_sb.length);
 
     // Cleanup
-    sb_free(&sb);
     if (response.free_body_after_use)
       MEM_FREE(response.body.items);
     http_headers_free(&response.headers);
-    MEM_FREE(request.raw_request.items);
 
     if (!response.keep_alive) {
       break;
@@ -1189,6 +1227,8 @@ void *handle_client(void *arg) {
   }
 
   close(clientfd);
+  sb_free(&request_sb);
+  sb_free(&response_sb);
   return NULL;
 }
 
@@ -1204,7 +1244,7 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
   while (true) {
     int clientfd = accept(server->sockfd, NULL, NULL);
     if (clientfd < 0) {
-      fprintf(stderr, "accept failed: %s", strerror(errno));
+      fprintf(stderr, "ERROR: accept failed: %s", strerror(errno));
       continue;
     }
 
@@ -1215,7 +1255,7 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
     pthread_t tid;
     if (pthread_create(&tid, NULL, handle_client, arg) < 0) {
       close(clientfd);
-      fprintf(stderr, "pthread create: %s", strerror(errno));
+      fprintf(stderr, "ERROR: pthread create: %s", strerror(errno));
       continue;
     }
 
