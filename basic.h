@@ -84,7 +84,6 @@ StringBuilder sb_clone(StringBuilder *sb);
 
 String sv_new(char *str);
 String sv_new2(char *str, size_t len);
-String* sv_heap_new(String sv); // Returns a pointer to String object on the heap
 bool sv_equal(String s1, String s2);
 String sv_trim_left(String sv);
 String sv_trim_right(String sv);
@@ -133,7 +132,8 @@ typedef struct {
 #define MAX_ERROR_LENGTH 500
 #define ErrorNil (Error){0}
 
-Error error(String message);
+Error error(char* message);
+Error error_sv(String message);
 Error errorf(const char *format, ...) __attribute__((format(printf, 1, 2)));
 bool has_error(Error err);
 
@@ -211,6 +211,12 @@ typedef struct {
   int id;
   String method;
   String path;
+  String body;
+  HashTable headers;
+
+  // This is the raw request string
+  // Needs to be freed after use
+  String raw_request;
 } HttpRequest;
 
 typedef struct {
@@ -218,18 +224,28 @@ typedef struct {
   HashTable headers; // String to String hashtable
   String body;
   bool free_body_after_use; // Will call MEM_FREE on body after use
+  bool keep_alive; // Whether to keep the connection alive
 } HttpResponse;
 
 typedef HttpResponse (*HttpListenCallback)(HttpRequest*);
 
-#define HTTP_BACKLOG 10
+#define HTTP_DEFAULT_PORT 8000
+#define HTTP_BACKLOG 1024
 #define HTTP_HEADER_CAPACITY 20
 
 HashTable http_headers_init(void);
 bool http_headers_set(HashTable *headers, String key, String value);
+String* http_headers_get(HashTable *headers, String key);
 void http_headers_free(HashTable *headers);
 
-Error http_server_init(HttpServer *server, int port);
+typedef struct {
+  int port;
+  int backlog;
+  int header_capacity;
+} HttpServerInitOptions;
+
+Error http_server_init(HttpServer *server);
+Error http_server_init_opts(HttpServer *server, HttpServerInitOptions options);
 Error http_server_listen(HttpServer *server, HttpListenCallback callback);
 void http_server_free(HttpServer *server);
 

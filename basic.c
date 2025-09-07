@@ -19,25 +19,26 @@ size_t align(size_t size) {
   return size + (8 - size % 8);
 }
 
-void* talloc(size_t n) {
-	size_t size = align(n);
-	assert(size <= TEMP_BUFFER_CAP);
+void *talloc(size_t n) {
+  size_t size = align(n);
+  assert(size <= TEMP_BUFFER_CAP);
 
-	if (temp_allocated + size >= TEMP_BUFFER_CAP) {
-		temp_allocated = 0;
-	}
+  if (temp_allocated + size >= TEMP_BUFFER_CAP) {
+    temp_allocated = 0;
+  }
 
-	void* ptr = &temp_buffer[temp_allocated];
-	temp_allocated += size;
-	memset(ptr, 0, size);
-	return ptr;
+  void *ptr = &temp_buffer[temp_allocated];
+  temp_allocated += size;
+  memset(ptr, 0, size);
+  return ptr;
 }
 
 void treset() { temp_allocated = 0; }
 
 // Error Handling
 
-Error error(String message) { return (Error){.message = message}; }
+Error error(char *message) { return error_sv(sv_new(message)); }
+Error error_sv(String message) { return (Error){.message = message}; }
 
 Error errorf(const char *format, ...) {
   va_list args;
@@ -46,14 +47,15 @@ Error errorf(const char *format, ...) {
   String str = tvprintf(format, args);
   va_end(args);
 
-  return error(str);
+  return error_sv(str);
 }
 
 bool has_error(Error err) { return err.message.length > 0; }
 
 void _try(Error err, char *file, int line) {
   if (has_error(err)) {
-    fprintf(stderr, "%s:%d: thread paniced: "SV_Fmt"\n", file, line, SV_Arg(err.message));
+    fprintf(stderr, "%s:%d: thread paniced: " SV_Fmt "\n", file, line,
+            SV_Arg(err.message));
     exit(1);
   }
 }
@@ -71,7 +73,6 @@ String sb_to_sv(StringBuilder *sb) {
   String sv = {0};
   sv.items = sb->items;
   sv.length = sb->length;
-  sb->length = 0;
   return sv;
 }
 
@@ -170,12 +171,6 @@ String sv_new(char *str) {
   return sv;
 }
 
-String *sv_heap_new(String sv) {
-  String *sv_ptr = MEM_REALLOC(NULL, sizeof(String));
-  *sv_ptr = sv;
-  return sv_ptr;
-}
-
 bool sv_equal(String s1, String s2) {
   if (s1.length != s2.length)
     return false;
@@ -204,12 +199,7 @@ String sv_trim_right(String sv) {
   return result;
 }
 
-String sv_trim(String sv) {
-  String result = sv_trim_left(sv);
-  result = sv_trim_right(sv);
-
-  return result;
-}
+String sv_trim(String sv) { return sv_trim_left(sv_trim_right(sv)); }
 
 StringPair sv_split_delim(String sv, char delim) {
   StringPair result = {0};
@@ -231,6 +221,21 @@ StringPair sv_split_delim(String sv, char delim) {
   return result;
 }
 
+ssize_t sv_find(String sv, char *str) {
+  size_t i = 0;
+  size_t n = strlen(str);
+
+  for (i = 0; i < sv.length; i++) {
+    if (sv.items[i] == str[0] && i + n <= sv.length) {
+      if (memcmp(str, &sv.items[i], n) == 0) {
+        return i;
+      }
+    }
+  }
+
+  return -1;
+}
+
 StringPair sv_split_str(String sv, char *str) {
   StringPair result = {0};
 
@@ -244,7 +249,7 @@ StringPair sv_split_str(String sv, char *str) {
   size_t i = 0;
   bool found = false;
   for (i = 0; i + n <= sv.length; i++) {
-    if (strncmp(str, &sv.items[i], n) == 0) {
+    if (memcmp(str, &sv.items[i], n) == 0) {
       found = true;
       break;
     }
@@ -470,7 +475,7 @@ JsonValue *json_new_object(void) {
 }
 
 Error json_error(Error cause, String s) {
-  return errorf(SV_Fmt ", "SV_Fmt, SV_Arg(cause.message), SV_Arg(s));
+  return errorf(SV_Fmt ", " SV_Fmt, SV_Arg(cause.message), SV_Arg(s));
 }
 
 bool json_is_end_char(char ch) { return ch == ',' || ch == ']' || ch == '}'; }
@@ -707,7 +712,7 @@ JsonValue *json_object_get(JsonValue *json, const char *key) {
   int n = strlen(key);
   for (size_t i = 0; i < json->value.object.length; i++) {
     JsonObjectEntry entry = json->value.object.items[i];
-    if (strncmp(entry.key->value.string.items, key, n) == 0) {
+    if (entry.key->value.string.length == n && memcmp(entry.key->value.string.items, key, n) == 0) {
       return entry.value;
     }
   }
@@ -720,7 +725,7 @@ void json_object_set(JsonValue *json, const char *key, JsonValue *val) {
   int index = -1;
   for (size_t i = 0; i < json->value.object.length; i++) {
     JsonObjectEntry entry = json->value.object.items[i];
-    if (strncmp(entry.key->value.string.items, key, n) == 0) {
+    if (entry.key->value.string.length == n && memcmp(entry.key->value.string.items, key, n) == 0) {
       index = i;
       break;
     }
@@ -740,7 +745,7 @@ bool json_object_remove(JsonValue *json, const char *key) {
   int index = -1;
   for (size_t i = 0; i < json->value.object.length; i++) {
     JsonObjectEntry entry = json->value.object.items[i];
-    if (strncmp(entry.key->value.string.items, key, n) == 0) {
+    if (memcmp(entry.key->value.string.items, key, n) == 0) {
       index = i;
       break;
     }
@@ -807,7 +812,7 @@ void _json_encode(JsonValue json, StringBuilder *sb, int pp, int indent) {
         sb_push_whitespace(sb, indent);
       _json_encode(*json.value.array.items[i], sb, pp, indent + pp);
       if (i < json.value.array.length - 1)
-        sb_push_char(sb, '[');
+        sb_push_char(sb, ',');
       if (pp > 0)
         sb_push_char(sb, '\n');
     }
@@ -913,8 +918,22 @@ HashTable http_headers_init(void) {
 
 bool http_headers_set(HashTable *headers, String key, String value) {
   assert(headers != NULL);
-  return hash_table_set(headers, sv_heap_new(sv_clone(key)),
-                        sv_heap_new(sv_clone(value)));
+  String *key_copy = MEM_REALLOC(NULL, sizeof(String));
+  *key_copy = key;
+  String *value_copy = MEM_REALLOC(NULL, sizeof(String));
+  *value_copy = value;
+  return hash_table_set(headers, key_copy, value_copy);
+}
+
+String *http_headers_get(HashTable *headers, String key) {
+  assert(headers != NULL);
+  assert(key.length > 0);
+
+  void *value = NULL;
+  if (hash_table_get(headers, &key, &value)) {
+    return (String *)value;
+  }
+  return NULL;
 }
 
 void http_headers_free(HashTable *headers) {
@@ -925,10 +944,6 @@ void http_headers_free(HashTable *headers) {
       if (entry.key != NULL) {
         String *k = (String *)entry.key;
         String *v = (String *)entry.value;
-        if (k && k->items)
-          MEM_FREE(k->items);
-        if (v && v->items)
-          MEM_FREE(v->items);
         MEM_FREE(k);
         MEM_FREE(v);
       }
@@ -937,7 +952,16 @@ void http_headers_free(HashTable *headers) {
   hash_table_free(headers);
 }
 
-Error http_server_init(HttpServer *server, int port) {
+Error http_server_init(HttpServer *server) {
+  HttpServerInitOptions options = {
+      .port = HTTP_DEFAULT_PORT,
+      .backlog = HTTP_BACKLOG,
+      .header_capacity = HTTP_HEADER_CAPACITY,
+  };
+  return http_server_init_opts(server, options);
+}
+
+Error http_server_init_opts(HttpServer *server, HttpServerInitOptions opt) {
   assert(server != NULL);
 
   server->sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -945,24 +969,24 @@ Error http_server_init(HttpServer *server, int port) {
     return errorf("socket failed: %s", strerror(errno));
   }
 
-  int opt = 1;
+  int socket_options = 1;
 #ifdef SO_REUSEADDR
-  if (setsockopt(server->sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) <
-      0) {
+  if (setsockopt(server->sockfd, SOL_SOCKET, SO_REUSEADDR, &socket_options,
+                 sizeof(socket_options)) < 0) {
     return errorf("setsockopt failed: %s", strerror(errno));
   }
 #endif
 
 #ifdef SO_REUSEPORT
-  if (setsockopt(server->sockfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) <
-      0) {
+  if (setsockopt(server->sockfd, SOL_SOCKET, SO_REUSEPORT, &socket_options,
+                 sizeof(socket_options)) < 0) {
     return errorf("setsockopt failed: %s", strerror(errno));
   }
 #endif
 
   server->addr.sin_family = AF_INET;
   server->addr.sin_addr.s_addr = INADDR_ANY;
-  server->addr.sin_port = htons(port);
+  server->addr.sin_port = htons(opt.port);
 
   if (bind(server->sockfd, (struct sockaddr *)&server->addr,
            sizeof(server->addr)) < 0) {
@@ -974,45 +998,150 @@ Error http_server_init(HttpServer *server, int port) {
 
 #define CRLF "\r\n"
 
+void http_response_write(int clientfd, char *buffer, size_t length) {
+  assert(buffer != NULL);
+  assert(length > 0);
+
+  size_t total_written = 0;
+  while (total_written < length) {
+    int n = write(clientfd, buffer + total_written, length - total_written);
+    if (n < 0) {
+      fprintf(stderr, "write failed: %s", strerror(errno));
+      if (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK) {
+        continue;
+      }
+      break;
+    }
+    if (n == 0) {
+      break;
+    }
+    total_written += n;
+  }
+}
+
+#define HTTP_READ_BUFFER_SIZE 100
+
 Error http_parse_request(int client, HttpRequest *request) {
-  Error err = ErrorNil;
+  assert(request != NULL);
 
-  size_t bufferlen = 512;
-  char *buffer = MEM_REALLOC(NULL, bufferlen);
+  StringBuilder sb = {0};
+  ssize_t header_end = -1;
 
-  int n = read(client, buffer, bufferlen);
-  if (n < 0) {
-    err = errorf("http read error:%s", strerror(errno));
-    goto defer;
+  char *buffer = talloc(HTTP_READ_BUFFER_SIZE); // Temp allocated buffer
+
+  while (true) {
+    int n = read(client, buffer, HTTP_READ_BUFFER_SIZE);
+    if (n < 0) {
+      sb_free(&sb);
+      return errorf("http read error:%s", strerror(errno));
+    }
+    if (n == 0) {
+      sb_free(&sb);
+      return error("http read error: eof ");
+    }
+    sb_push_sv(&sb, sv_new2(buffer, n));
+    header_end = sv_find(sb_to_sv(&sb), CRLF CRLF);
+    if (header_end != -1) {
+      break;
+    }
   }
 
-  String request_str = sv_new2(buffer, n);
+  String request_str = sb_to_sv(&sb);
 
-  StringPair p0 = sv_split_str(request_str, CRLF); // status_line vs rest
-  StringPair p1 = sv_split_delim(p0.first, ' ');   // method vs rest
-  StringPair p2 = sv_split_delim(p1.second, ' ');  // path vs rest
+  // Parsing the request
+  StringPair p0 = sv_split_str(request_str, CRLF); // (status_line vs rest)
+  StringPair p1 = sv_split_delim(p0.first, ' ');   // (method vs rest)
+  StringPair p2 = sv_split_delim(p1.second, ' ');  // (path vs rest)
 
   request->id = getpid();
-  request->method = sv_clone(p1.first);
-  request->path = sv_clone(p2.first);
+  request->method = p1.first;
+  request->path = p2.first;
+  request->headers = http_headers_init();
 
-defer:
-  MEM_FREE(buffer);
-  return err;
+  // Parsing the headers
+  size_t content_length = 0;
+  String sv = sv_trim(p0.second);
+  while (sv.length > 0) {
+    StringPair p0 = sv_split_str(sv, CRLF);        // header_line vs rest
+    StringPair p1 = sv_split_delim(p0.first, ':'); // header_key vs header_value
+
+    String key = sv_trim(p1.first);
+    String value = sv_trim(p1.second);
+    if (key.length == 0 || value.length == 0) {
+      break;
+    }
+
+    if (sv_equal(key, sv_new("Content-Length"))) {
+      content_length = atoi(value.items);
+    }
+
+    http_headers_set(&request->headers, key, value);
+    sv = p0.second;
+  }
+
+  // Read body if not read yet
+  while (sb.length < (header_end + 4 + content_length)) {
+    int to_read = header_end + 4 + content_length - sb.length;
+    if (to_read > HTTP_READ_BUFFER_SIZE) {
+      to_read = HTTP_READ_BUFFER_SIZE;
+    }
+    int n = read(client, buffer, to_read);
+    if (n < 0) {
+      sb_free(&sb);
+      return errorf("http read error:%s", strerror(errno));
+    }
+    if (n == 0) {
+      sb_free(&sb);
+      return error("http read error: eof ");
+    }
+    sb_push_sv(&sb, sv_new2(buffer, n));
+  }
+  request->body =
+      sv_new2(sb.items + header_end + 4, sb.length - header_end - 4);
+  request->raw_request = sb_to_sv(&sb);
+  return ErrorNil;
+}
+
+String http_status_code_to_string(int status_code) {
+  switch (status_code) {
+  case 200:
+    return sv_new("OK");
+  case 201:
+    return sv_new("Created");
+  case 301:
+    return sv_new("Moved Permanently");
+  case 400:
+    return sv_new("Bad Request");
+  case 404:
+    return sv_new("Not Found");
+  case 500:
+    return sv_new("Internal Server Error");
+  default:
+    return sv_new("Unknown");
+  }
 }
 
 void http_response_encode(HttpResponse *response, StringBuilder *sb) {
   sb_push_str(sb, "HTTP/1.1 ");
   sb_push_long(sb, response->status_code);
-  sb_push_str(sb, " " CRLF);
-  sb_push_str(sb, "Content-Length:");
+  sb_push_str(sb, " ");
+  sb_push_sv(sb, http_status_code_to_string(response->status_code));
+  sb_push_str(sb, CRLF);
+  sb_push_str(sb, "Content-Length: ");
   sb_push_long(sb, response->body.length);
   sb_push_str(sb, CRLF);
+  if (response->keep_alive) {
+    sb_push_str(sb, "Connection: keep-alive");
+    sb_push_str(sb, CRLF);
+  } else {
+    sb_push_str(sb, "Connection: close");
+    sb_push_str(sb, CRLF);
+  }
   for (int i = 0; i < response->headers.capacity; i++) {
     HashTableEntry entry = response->headers.entries[i];
     if (entry.key != NULL) {
       sb_push_sv(sb, *(String *)entry.key);
-      sb_push_char(sb, ':');
+      sb_push_str(sb, ": ");
       sb_push_sv(sb, *(String *)entry.value);
       sb_push_str(sb, CRLF);
     }
@@ -1032,25 +1161,31 @@ void *handle_client(void *arg) {
   HttpListenCallback callback = args->callback;
   MEM_FREE(arg);
 
-  HttpRequest request = {0};
-  Error err = http_parse_request(clientfd, &request);
-  if (!has_error(err)) {
+  while (true) {
+    HttpRequest request = {0};
+    Error err = http_parse_request(clientfd, &request);
+    if (has_error(err)) {
+      fprintf(stderr, "http parse request failed: " SV_Fmt "\n",
+              SV_Arg(err.message));
+      break;
+    }
+
     StringBuilder sb = {0};
     HttpResponse response = callback(&request);
-    http_response_encode(&response, &sb);
 
-    int n = write(clientfd, sb.items, sb.length);
-    if (n < 0) {
-      fprintf(stderr, "write failed: %s", strerror(errno));
-    }
+    http_response_encode(&response, &sb);
+    http_response_write(clientfd, sb.items, sb.length);
 
     // Cleanup
     sb_free(&sb);
     if (response.free_body_after_use)
       MEM_FREE(response.body.items);
     http_headers_free(&response.headers);
-    MEM_FREE(request.method.items);
-    MEM_FREE(request.path.items);
+    MEM_FREE(request.raw_request.items);
+
+    if (!response.keep_alive) {
+      break;
+    }
   }
 
   close(clientfd);
@@ -1096,5 +1231,7 @@ HttpResponse http_response_init(int status_code) {
   HttpResponse response = {0};
   response.headers = http_headers_init();
   response.status_code = status_code;
+  response.keep_alive = true;
+  response.free_body_after_use = false;
   return response;
 }

@@ -10,7 +10,7 @@ HttpResponse json_response(int status, HttpRequest *request, JsonValue *json) {
   http_headers_set(&response.headers, sv_new("Content-Type"), sv_new("application/json"));
 
   StringBuilder sb = {0};
-  json_encode(*json, &sb, 4);
+  json_encode(*json, &sb, 0);
   response.body = sb_to_sv(&sb);
   response.free_body_after_use = true;
   json_free(json);
@@ -30,7 +30,11 @@ HttpResponse http_listen_callback(HttpRequest* request) {
 
 int main(int argc, char** argv) {
   HttpServer server = {0};
-  try(http_server_init(&server, 8080));
+  try(http_server_init_opts(&server, (HttpServerInitOptions){
+    .port = 8000,
+    .backlog = 1024, 
+    .header_capacity = 20
+  }));
   try(http_server_listen(&server, http_listen_callback));
   http_server_free(&server);
   return 0;
