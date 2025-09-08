@@ -190,9 +190,9 @@ Error json_decode(String sv, JsonValue **out);
 JsonNumber json_get_number(JsonValue *json);
 JsonString json_get_string(JsonValue *json);
 
-JsonValue *json_object_get(JsonValue *json, const char *key);
-void json_object_set(JsonValue *json, const char *key, JsonValue *val);
-bool json_object_remove(JsonValue *json, const char *key);
+JsonValue *json_object_get(JsonValue *json, String key);
+void json_object_set(JsonValue *json, String key, JsonValue *val);
+bool json_object_remove(JsonValue *json, String key);
 
 JsonValue *json_array_get(JsonValue *json, int index);
 void json_array_append(JsonValue *json, JsonValue *val);

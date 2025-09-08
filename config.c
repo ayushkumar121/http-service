@@ -1,9 +1,7 @@
 #include "config.h"
+#include "basic.h"
 
-static Config* config = NULL;
-static JsonValue* json = NULL;
-
-// const char config[] = 
+static JsonValue* config = NULL;
 
 Error config_load(char *path) {
   assert(path != NULL);
@@ -15,30 +13,47 @@ Error config_load(char *path) {
   try(read_entire_file(path, &sb));
   String file_content = sb_to_sv(&sb);
   
-  Error err = json_decode(file_content, &json);
+  Error err = json_decode(file_content, &config);
   if (has_error(err)) {
     return err;
   }
   sb_free(&sb);
-
-  config = MEM_REALLOC(NULL, sizeof(Config));
-  config->port = json_get_number(json_object_get(json, "port"));
-
-  JsonValue* mysql = json_object_get(json, "mysql");
-  config->mysql.host = json_get_string(json_object_get(mysql, "host"));
-  config->mysql.port = json_get_number(json_object_get(mysql, "port"));
-  config->mysql.user = json_get_string(json_object_get(mysql, "user"));
-  config->mysql.password = json_get_string(json_object_get(mysql, "password"));
-  config->mysql.database = json_get_string(json_object_get(mysql, "database"));
   return ErrorNil;
 }
 
-Config* config_get(void) {
-  assert(config != NULL);
-  return config;
+JsonValue* config_get(String key) {
+  StringPair p = sv_split_delim(key, '.');
+  JsonValue* value = config;
+  while(p.first.length != 0) {
+    value = json_object_get(value, p.first);
+    if (value == NULL) {
+      return NULL;
+    }
+    p = sv_split_delim(p.second, '.');
+  }
+  return value;
+}
+
+String config_get_string(String key, String default_value) {
+  JsonValue* value = config_get(key);
+  if (value == NULL) {
+    return default_value;
+  }
+  return json_get_string(value);
+} 
+
+double config_get_double(String key, int default_value) {
+  JsonValue* value = config_get(key);
+  if (value == NULL) {
+    return default_value;
+  }
+  return json_get_number(value);
+}
+
+int config_get_int(String key, int default_value) {
+  return (int)config_get_double(key, default_value);
 }
 
 void config_free(void) {
-  MEM_FREE(config);
-  json_free(json);
+  json_free(config);
 }

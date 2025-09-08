@@ -708,25 +708,23 @@ JsonString json_get_string(JsonValue *json) {
   return json->value.string;
 }
 
-JsonValue *json_object_get(JsonValue *json, const char *key) {
+JsonValue *json_object_get(JsonValue *json, String key) {
   assert(json->type == JSON_OBJECT);
-  int n = strlen(key);
   for (size_t i = 0; i < json->value.object.length; i++) {
     JsonObjectEntry entry = json->value.object.items[i];
-    if (entry.key->value.string.length == n && memcmp(entry.key->value.string.items, key, n) == 0) {
+    if (sv_equal(entry.key->value.string, key)) {
       return entry.value;
     }
   }
   return NULL;
 }
 
-void json_object_set(JsonValue *json, const char *key, JsonValue *val) {
+void json_object_set(JsonValue *json, String key, JsonValue *val) {
   assert(json->type == JSON_OBJECT);
-  int n = strlen(key);
   int index = -1;
   for (size_t i = 0; i < json->value.object.length; i++) {
     JsonObjectEntry entry = json->value.object.items[i];
-    if (entry.key->value.string.length == n && memcmp(entry.key->value.string.items, key, n) == 0) {
+    if (sv_equal(entry.key->value.string, key)) {
       index = i;
       break;
     }
@@ -736,17 +734,16 @@ void json_object_set(JsonValue *json, const char *key, JsonValue *val) {
     json->value.object.items[index].value = val;
   } else {
     array_append(&json->value.object,
-                 ((JsonObjectEntry){json_new_cstring((char *)key), val}));
+                 ((JsonObjectEntry){json_new_string(key), val}));
   }
 }
 
-bool json_object_remove(JsonValue *json, const char *key) {
+bool json_object_remove(JsonValue *json, String key) {
   assert(json->type == JSON_OBJECT);
-  int n = strlen(key);
   int index = -1;
   for (size_t i = 0; i < json->value.object.length; i++) {
     JsonObjectEntry entry = json->value.object.items[i];
-    if (memcmp(entry.key->value.string.items, key, n) == 0) {
+    if (sv_equal(entry.key->value.string, key)) {
       index = i;
       break;
     }

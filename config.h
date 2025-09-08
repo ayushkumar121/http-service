@@ -3,21 +3,10 @@
 
 #include "basic.h"
 
-typedef struct {
-  String host;
-  int port;
-  String user;
-  String password;
-  String database;
-} MysqlConfig;
-
-typedef struct {
-  int port;
-  MysqlConfig mysql;
-} Config;
-
 Error config_load(char *path);
-Config* config_get(void);
+String config_get_string(String key, String default_value);
+double config_get_double(String key, int default_value);
+int config_get_int(String key, int default_value);
 void config_free(void);
 
 #endif
