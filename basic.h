@@ -3,10 +3,10 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+#include <string.h>
+#include <stdlib.h>
+#include <assert.h>
 
 #define MEM_REALLOC realloc
 #define MEM_FREE(ptr) free(ptr)
@@ -85,6 +85,7 @@ StringBuilder sb_clone(StringBuilder *sb);
 String sv_new(char *str);
 String sv_new2(char *str, size_t len);
 bool sv_equal(String s1, String s2);
+ssize_t sv_find(String sv, char *str);
 String sv_trim_left(String sv);
 String sv_trim_right(String sv);
 String sv_trim(String sv);
@@ -201,54 +202,15 @@ void json_encode(JsonValue json, StringBuilder *sb, int pp);
 void json_print(FILE *file, JsonValue json, int pp);
 void json_free(JsonValue *json);
 
-// HTTP Server
-typedef struct {
-  int sockfd;
-  struct sockaddr_in addr;
-} HttpServer;
+// File I/O
 
-typedef struct {
-  int id;
-  String method;
-  String path;
-  String body;
-  HashTable headers;
+#define ErrorReadFile (Error){sv_new("failed to read file")}
+#define ErrorWriteFile (Error){sv_new("failed to write file")}
+#define ErrorFileEmpty (Error){sv_new("file is empty")}
 
-  // This is the raw request string
-  // Needs to be freed after use
-  String raw_request;
-} HttpRequest;
-
-typedef struct {
-  int status_code;
-  HashTable headers; // String to String hashtable
-  String body;
-  bool free_body_after_use; // Will call MEM_FREE on body after use
-  bool keep_alive; // Whether to keep the connection alive
-} HttpResponse;
-
-typedef HttpResponse (*HttpListenCallback)(HttpRequest*);
-
-#define HTTP_DEFAULT_PORT 8000
-#define HTTP_BACKLOG 1024
-#define HTTP_HEADER_CAPACITY 20
-
-HashTable http_headers_init(void);
-bool http_headers_set(HashTable *headers, String key, String value);
-String* http_headers_get(HashTable *headers, String key);
-void http_headers_free(HashTable *headers);
-
-typedef struct {
-  int port;
-  int backlog;
-  int header_capacity;
-} HttpServerInitOptions;
-
-Error http_server_init(HttpServer *server);
-Error http_server_init_opts(HttpServer *server, HttpServerInitOptions options);
-Error http_server_listen(HttpServer *server, HttpListenCallback callback);
-void http_server_free(HttpServer *server);
-
-HttpResponse http_response_init(int status_code);
+size_t file_size(const char *path);
+bool file_exists(const char *path);
+Error read_entire_file(const char *path, StringBuilder *sb);
+Error write_entire_file(const char *path, String sv);
 
 #endif // BASIC_H

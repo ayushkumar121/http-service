@@ -1,5 +1,19 @@
+MAIN=http-service
 CC=cc
-CFLAGS=-std=c23 -Wall
+CFLAGS=-Wall
+LIBS= 
 
-http-service: http-service.c basic.c basic.h
-	$(CC) -o http-service http-service.c basic.c $(CFLAGS)
+$(MAIN): $(MAIN).c http.o basic.o config.o
+	$(CC) -o $(MAIN) $(MAIN).c http.o basic.o config.o $(CFLAGS)
+
+http.o: http.c http.h
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+basic.o: basic.c basic.h
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+config.o: config.c config.h
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+clean:
+	rm -f $(MAIN) $(MAIN).o http.o basic.o dbconfig.o config.o
