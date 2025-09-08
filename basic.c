@@ -29,7 +29,6 @@ void *talloc(size_t n) {
 
   void *ptr = &temp_buffer[temp_allocated];
   temp_allocated += size;
-  memset(ptr, 0, size);
   return ptr;
 }
 
