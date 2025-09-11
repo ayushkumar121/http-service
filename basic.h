@@ -74,6 +74,7 @@ void sb_free(StringBuilder *sb);
 
 void sb_push_str(StringBuilder *sb, char *str);
 void sb_push_sv(StringBuilder *sb, String sv);
+void sb_push_sv_escape(StringBuilder *sb, String sv);
 void sb_push_char(StringBuilder *sb, char ch);
 void sb_push_long(StringBuilder *sb, long l);
 void sb_push_double(StringBuilder *sb, double d);

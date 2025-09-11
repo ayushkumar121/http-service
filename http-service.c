@@ -11,7 +11,7 @@ HttpResponse http_listen_callback(HttpRequest* request) {
   json_object_set(json, sv_new("request_id"), json_new_string(request->request_id));
   json_object_set(json, sv_new("method"), json_new_string(request->method));
   json_object_set(json, sv_new("path"), json_new_string(request->path));
-  json_object_set(json, sv_new("status_code"), json_new_number(200));
+  json_object_set(json, sv_new("body"), json_new_string(request->body));
 
   JsonValue* headers = json_new_object();
   for (size_t i=0; i<request->headers.capacity; i++) {
