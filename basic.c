@@ -1,11 +1,12 @@
 #include "./basic.h"
 
 #include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <ctype.h>
-#include <errno.h>
 
 #include <sys/stat.h>
 
@@ -97,7 +98,7 @@ void sb_push_sv(StringBuilder *sb, String sv) {
 }
 
 void sb_push_sv_escape(StringBuilder *sb, String sv) {
-  for (size_t i=0; i<sv.length; i++) {
+  for (size_t i = 0; i < sv.length; i++) {
     char ch = sv.items[i];
     switch (ch) {
     case '\r':
@@ -116,7 +117,7 @@ void sb_push_sv_escape(StringBuilder *sb, String sv) {
       sb_push_str(sb, "\\\\");
       break;
     default:
-    if (ch <= 0x1F) {
+      if (ch <= 0x1F) {
         sb_push_sv(sb, tprintf("\\u%04x", ch));
       } else {
         sb_push_char(sb, ch);
@@ -219,7 +220,7 @@ bool sv_equal_ignorecase(String s1, String s2) {
     if (tolower(s1.items[i]) != tolower(s2.items[i]))
       return false;
   }
-  
+
   return true;
 }
 
@@ -347,6 +348,49 @@ String tvprintf(const char *format, va_list args) {
 
   return sv_new2(str, n);
 }
+
+long sv_to_long(String sv, char **endptr) {
+  if (sv.length == 0 || sv.items == NULL)
+    return 0;
+  long l = 0;
+  bool neg = false;
+
+  if (sv.items[0] == '-')
+    neg = true;
+  else if (sv.items[0] == '+')
+    neg = false;
+
+  size_t i;
+  if (sv.items[0] == '-' || sv.items[0] == '+')
+    i = 1;
+  else
+    i = 0;
+
+  if (i == sv.length) {
+    *endptr = sv.items;
+    return 0;
+  }
+
+  for (; i < sv.length; i++) {
+    char ch = sv.items[i];
+    if (ch < '0' || ch > '9') {
+      *endptr = &sv.items[i];
+      return 0;
+    }
+    long d = ch - '0';
+    if (l > (LONG_MAX - d) / 10) {
+      if (endptr)
+        *endptr = &sv.items[i];
+      return neg ? LONG_MIN : LONG_MAX;
+    }
+    l = l * 10 + d;
+  }
+  if (endptr)
+    *endptr = sv.items + sv.length;
+  return (neg) ? -l : l;
+}
+
+int sv_to_int(String sv, char **endptr) { return (int)sv_to_long(sv, endptr); }
 
 /* Hash Table */
 
@@ -516,8 +560,9 @@ JsonValue *json_new_object(void) {
   return value;
 }
 
-Error _json_error(Error cause, String s, const char* file, int line) {
-  return errorf(SV_Fmt ": \"" SV_Fmt "\" at %s:%d", SV_Arg(cause.message), SV_Arg(s), file, line);
+Error _json_error(Error cause, String s, const char *file, int line) {
+  return errorf(SV_Fmt ": \"" SV_Fmt "\" at %s:%d", SV_Arg(cause.message),
+                SV_Arg(s), file, line);
 }
 
 #define json_error(cause, s) _json_error(cause, s, __FILE__, __LINE__)
@@ -765,15 +810,27 @@ JsonValue *json_object_get(JsonValue *json, String key) {
   return NULL;
 }
 
-JsonValue *json_object_get_rec(JsonValue *json, String key) {
+JsonValue *json_get(JsonValue *json, String key) {
   assert(json != NULL);
-  assert(json->type == JSON_OBJECT);
-  
+
   StringPair p = sv_split_delim(key, '.');
-  JsonValue* value = json;
-  while(p.first.length != 0) {
-    value = json_object_get(value, p.first);
-    if (value == NULL) return NULL;
+  JsonValue *value = json;
+  while (p.first.length != 0) {
+    if (value->type == JSON_OBJECT) {
+      value = json_object_get(value, p.first);
+    } else if (value->type == JSON_ARRAY) {
+      char *endptr = NULL;
+      int index = sv_to_int(p.first, &endptr);
+      if (endptr > p.first.items) {
+        value = json_array_get(value, index);
+      } else {
+        return NULL;
+      }
+    } else {
+      return NULL;
+    }
+    if (value == NULL)
+      return NULL;
     p = sv_split_delim(p.second, '.');
   }
   return value;

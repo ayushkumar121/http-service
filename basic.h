@@ -1,12 +1,12 @@
 #ifndef BASIC_H
 #define BASIC_H
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <string.h>
 
 #define MEM_REALLOC realloc
 #define MEM_ALLOC(size) MEM_REALLOC(NULL, size)
@@ -30,7 +30,7 @@
   do {                                                                         \
     if ((array)->capacity < (array)->length + 1) {                             \
       (array)->capacity =                                                      \
-          ((array)->capacity == 0) ? ARRAY_INIT_CAP : (array)->capacity * 1.5;   \
+          ((array)->capacity == 0) ? ARRAY_INIT_CAP : (array)->capacity * 1.5; \
       (array)->items = MEM_REALLOC(                                            \
           (array)->items, (array)->capacity * sizeof(*(array)->items));        \
     }                                                                          \
@@ -102,6 +102,9 @@ String sv_clone(String sv); // Clones the string on the heap
 String tprintf(const char *format, ...) __attribute__((format(printf, 1, 2)));
 String tvprintf(const char *format, va_list);
 
+long sv_to_long(String sv, char **endptr);
+int sv_to_int(String sv, char **endptr);
+
 // Hash Table
 
 typedef struct {
@@ -136,18 +139,20 @@ typedef struct {
 #define MAX_ERROR_LENGTH 500
 #define ErrorNil (Error){0}
 
-Error error(char* message);
+Error error(char *message);
 Error error_sv(String message);
 Error errorf(const char *format, ...) __attribute__((format(printf, 1, 2)));
 bool has_error(Error err);
 
-void _try(Error err, char* file, int line);
+void _try(Error err, char *file, int line);
 #define try(err) _try(err, __FILE__, __LINE__)
 
 // JSON Encoding & Decoding
 
-#define JsonErrorEOF (Error){sv_new("json eof")}
-#define JsonErrorUnexpectedToken (Error){sv_new("json unexpected token")}
+#define JsonErrorEOF                                                           \
+  (Error) { sv_new("json eof") }
+#define JsonErrorUnexpectedToken                                               \
+  (Error) { sv_new("json unexpected token") }
 
 typedef enum {
   JSON_NULL,
@@ -181,20 +186,20 @@ typedef struct JsonObjectEntry {
   JsonValue *value;
 } JsonObjectEntry;
 
-JsonValue* json_new_null(void);
-JsonValue* json_new_bool(bool b);
-JsonValue* json_new_number(double n);
-JsonValue* json_new_string(String s);
-JsonValue* json_new_cstring(char* s);
-JsonValue* json_new_array(void);
-JsonValue* json_new_object(void);
+JsonValue *json_new_null(void);
+JsonValue *json_new_bool(bool b);
+JsonValue *json_new_number(double n);
+JsonValue *json_new_string(String s);
+JsonValue *json_new_cstring(char *s);
+JsonValue *json_new_array(void);
+JsonValue *json_new_object(void);
 
 Error json_decode(String sv, JsonValue **out);
 JsonNumber json_get_number(JsonValue *json);
 JsonString json_get_string(JsonValue *json);
 
 JsonValue *json_object_get(JsonValue *json, String key);
-JsonValue *json_object_get_rec(JsonValue *json, String key);
+JsonValue *json_get(JsonValue *json, String key);
 void json_object_set(JsonValue *json, String key, JsonValue *val);
 bool json_object_remove(JsonValue *json, String key);
 
@@ -208,9 +213,12 @@ void json_free(JsonValue *json);
 
 // File I/O
 
-#define ErrorReadFile (Error){sv_new("failed to read file")}
-#define ErrorWriteFile (Error){sv_new("failed to write file")}
-#define ErrorFileEmpty (Error){sv_new("file is empty")}
+#define ErrorReadFile                                                          \
+  (Error) { sv_new("failed to read file") }
+#define ErrorWriteFile                                                         \
+  (Error) { sv_new("failed to write file") }
+#define ErrorFileEmpty                                                         \
+  (Error) { sv_new("file is empty") }
 
 size_t file_size(const char *path);
 bool file_exists(const char *path);

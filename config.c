@@ -22,13 +22,13 @@ Error config_load(char *path) {
 }
 
 String config_get_string(String key, String default_value) {
-  JsonValue* value = json_object_get_rec(config, key);
+  JsonValue* value = json_get(config, key);
   if (value == NULL) return default_value;
   return json_get_string(value);
 } 
 
 double config_get_double(String key, int default_value) {
-  JsonValue* value = json_object_get_rec(config, key);
+  JsonValue* value = json_get(config, key);
   if (value == NULL) return default_value;
   return json_get_number(value);
 }
