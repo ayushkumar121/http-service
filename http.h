@@ -14,6 +14,7 @@ typedef struct {
 
 typedef struct {
   String request_id;
+  String proto;
   String method;
   String path;
   String body;

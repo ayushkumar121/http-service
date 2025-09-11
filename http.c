@@ -196,11 +196,13 @@ HttpError http_parse_request(int client, StringBuilder *sb,
   StringPair p0 = sv_split_str(request_str, CRLF); // (status_line vs rest)
   StringPair p1 = sv_split_delim(p0.first, ' ');   // (method vs rest)
   StringPair p2 = sv_split_delim(p1.second, ' ');  // (path vs rest)
+  StringPair p3 = sv_split_delim(p2.second, ' '); // (proto vs rest)
   if (p0.first.length == 0 || p1.first.length == 0 || p2.first.length == 0) {
     return HttpErrorParse;
   }
 
   request->request_id = tprintf("%d", getpid());
+  request->proto = p3.first;
   request->method = p1.first;
   request->path = p2.first;
   request->headers = http_headers_init();

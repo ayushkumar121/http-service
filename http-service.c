@@ -9,6 +9,7 @@
 HttpResponse http_listen_callback(HttpRequest* request) {
   JsonValue* json = json_new_object();
   json_object_set(json, sv_new("request_id"), json_new_string(request->request_id));
+  json_object_set(json, sv_new("proto"), json_new_string(request->proto));
   json_object_set(json, sv_new("method"), json_new_string(request->method));
   json_object_set(json, sv_new("path"), json_new_string(request->path));
   json_object_set(json, sv_new("body"), json_new_string(request->body));
@@ -22,7 +23,6 @@ HttpResponse http_listen_callback(HttpRequest* request) {
       for (size_t j = 0; j<values->length; j++) {
         json_array_append(header_values, json_new_string(values->items[j]));
       }
-        printf("\n");
       json_object_set(headers, *(String*)entry.key, header_values);
     }
   }
