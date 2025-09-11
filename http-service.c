@@ -2,10 +2,6 @@
 #include "http.h"
 #include "config.h"
 
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-
 HttpResponse http_listen_callback(HttpRequest* request) {
   JsonValue* json = json_new_object();
   json_object_set(json, sv_new("request_id"), json_new_string(request->request_id));

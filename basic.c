@@ -742,16 +742,19 @@ Error json_decode(String sv, JsonValue **out) {
 }
 
 JsonNumber json_get_number(JsonValue *json) {
+  assert(json != NULL);
   assert(json->type == JSON_NUMBER);
   return json->value.number;
 }
 
 JsonString json_get_string(JsonValue *json) {
+  assert(json != NULL);
   assert(json->type == JSON_STRING);
   return json->value.string;
 }
 
 JsonValue *json_object_get(JsonValue *json, String key) {
+  assert(json != NULL);
   assert(json->type == JSON_OBJECT);
   for (size_t i = 0; i < json->value.object.length; i++) {
     JsonObjectEntry entry = json->value.object.items[i];
@@ -762,7 +765,22 @@ JsonValue *json_object_get(JsonValue *json, String key) {
   return NULL;
 }
 
+JsonValue *json_object_get_rec(JsonValue *json, String key) {
+  assert(json != NULL);
+  assert(json->type == JSON_OBJECT);
+  
+  StringPair p = sv_split_delim(key, '.');
+  JsonValue* value = json;
+  while(p.first.length != 0) {
+    value = json_object_get(value, p.first);
+    if (value == NULL) return NULL;
+    p = sv_split_delim(p.second, '.');
+  }
+  return value;
+}
+
 void json_object_set(JsonValue *json, String key, JsonValue *val) {
+  assert(json != NULL);
   assert(json->type == JSON_OBJECT);
   int index = -1;
   for (size_t i = 0; i < json->value.object.length; i++) {
@@ -782,6 +800,7 @@ void json_object_set(JsonValue *json, String key, JsonValue *val) {
 }
 
 bool json_object_remove(JsonValue *json, String key) {
+  assert(json != NULL);
   assert(json->type == JSON_OBJECT);
   int index = -1;
   for (size_t i = 0; i < json->value.object.length; i++) {
@@ -801,17 +820,20 @@ bool json_object_remove(JsonValue *json, String key) {
 }
 
 JsonValue *json_array_get(JsonValue *json, int i) {
+  assert(json != NULL);
   assert(json->type == JSON_ARRAY);
   assert(i < json->value.array.length);
   return json->value.array.items[i];
 }
 
 void json_array_append(JsonValue *json, JsonValue *val) {
+  assert(json != NULL);
   assert(json->type == JSON_ARRAY);
   array_append(&json->value.array, val);
 }
 
 void json_array_remove(JsonValue *json, size_t index) {
+  assert(json != NULL);
   assert(json->type == JSON_ARRAY);
   assert(index < json->value.array.length);
   array_remove(&json->value.array, index);

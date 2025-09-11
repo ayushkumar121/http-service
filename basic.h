@@ -194,6 +194,7 @@ JsonNumber json_get_number(JsonValue *json);
 JsonString json_get_string(JsonValue *json);
 
 JsonValue *json_object_get(JsonValue *json, String key);
+JsonValue *json_object_get_rec(JsonValue *json, String key);
 void json_object_set(JsonValue *json, String key, JsonValue *val);
 bool json_object_remove(JsonValue *json, String key);
 
