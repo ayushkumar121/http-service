@@ -7,6 +7,7 @@
 - Temp allocator
 
 ## Performance
+Specifications: Apple M3 Pro
 ```shell
 $ wrk -c 100 http://localhost:8000
 Running 10s test @ http://localhost:8000
