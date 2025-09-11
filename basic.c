@@ -182,6 +182,18 @@ bool sv_equal(String s1, String s2) {
   return true;
 }
 
+bool sv_equal_ignorecase(String s1, String s2) {
+  if (s1.length != s2.length)
+    return false;
+
+  for (size_t i = 0; i < s1.length; i++) {
+    if (tolower(s1.items[i]) != tolower(s2.items[i]))
+      return false;
+  }
+  
+  return true;
+}
+
 String sv_trim_left(String sv) {
   String result = sv;
   while (result.length > 0 && isspace(*result.items)) {

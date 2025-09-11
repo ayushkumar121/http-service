@@ -9,6 +9,7 @@
 #include <assert.h>
 
 #define MEM_REALLOC realloc
+#define MEM_ALLOC(size) MEM_REALLOC(NULL, size)
 #define MEM_FREE(ptr) free(ptr)
 
 #define PAIR(T1, T2)                                                           \
@@ -85,6 +86,7 @@ StringBuilder sb_clone(StringBuilder *sb);
 String sv_new(char *str);
 String sv_new2(char *str, size_t len);
 bool sv_equal(String s1, String s2);
+bool sv_equal_ignorecase(String s1, String s2);
 ssize_t sv_find(String sv, char *str);
 String sv_trim_left(String sv);
 String sv_trim_right(String sv);

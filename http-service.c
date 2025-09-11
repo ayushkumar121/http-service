@@ -12,6 +12,21 @@ HttpResponse http_listen_callback(HttpRequest* request) {
   json_object_set(json, sv_new("method"), json_new_string(request->method));
   json_object_set(json, sv_new("path"), json_new_string(request->path));
   json_object_set(json, sv_new("status_code"), json_new_number(200));
+
+  JsonValue* headers = json_new_object();
+  for (size_t i=0; i<request->headers.capacity; i++) {
+    HashTableEntry entry = request->headers.entries[i];
+    if (entry.key != NULL) {
+      HeaderValues* values = (HeaderValues*) entry.value;
+      JsonValue* header_values = json_new_array();
+      for (size_t j = 0; j<values->length; j++) {
+        json_array_append(header_values, json_new_string(values->items[j]));
+      }
+        printf("\n");
+      json_object_set(headers, *(String*)entry.key, header_values);
+    }
+  }
+  json_object_set(json, sv_new("headers"), headers);
   
   return http_json_response(200, request, json);
 }

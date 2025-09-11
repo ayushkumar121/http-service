@@ -1,48 +1,55 @@
 #include "http.h"
 #include "basic.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 // For hashtable
-bool string_key_eq(void *a, void *b) {
+bool header_key_eq(void *a, void *b) {
   String *sa = a;
   String *sb = b;
-  return sv_equal(*sa, *sb);
+  return sv_equal_ignorecase(*sa, *sb);
 }
 
 // hash: https://theartincode.stanis.me/008-djb2/
-size_t string_key_hash(int cap, void *a) {
+size_t header_key_hash(int cap, void *a) {
   String *s = a;
   size_t hash = 5381;
   for (size_t i = 0; i < s->length; i++) {
-    hash = ((hash << 5) + hash) + (unsigned char)s->items[i];
+    hash = ((hash << 5) + hash) + (unsigned char)(tolower(s->items[i]));
   }
   return hash % cap;
 }
 
 HashTable http_headers_init(void) {
-  return hash_table_init(HTTP_HEADER_CAPACITY, string_key_eq, string_key_hash);
+  return hash_table_init(HTTP_HEADER_CAPACITY, header_key_eq, header_key_hash);
 }
 
-bool http_headers_set(HashTable *headers, String key, String value) {
+void http_headers_set(HashTable *headers, String key, String value) {
   assert(headers != NULL);
-  String *key_copy = MEM_REALLOC(NULL, sizeof(String));
-  *key_copy = key;
-  String *value_copy = MEM_REALLOC(NULL, sizeof(String));
-  *value_copy = value;
-  return hash_table_set(headers, key_copy, value_copy);
+  String *key_ptr= MEM_REALLOC(NULL, sizeof(String));
+  *key_ptr= key;
+
+  HeaderValues* out;
+  if (hash_table_get(headers, key_ptr, (void**)&out)) {
+      array_append(out, value);
+  } else {
+      HeaderValues* values = MEM_ALLOC(sizeof(HeaderValues));
+      array_append(values,  value);
+      hash_table_set(headers, key_ptr, values);
+  }
 }
 
-String *http_headers_get(HashTable *headers, String key) {
+HeaderValues* http_headers_get(HashTable *headers, String key) {
   assert(headers != NULL);
   assert(key.length > 0);
 
   void *value = NULL;
   if (hash_table_get(headers, &key, &value)) {
-    return (String *)value;
+    return (HeaderValues*)value;
   }
   return NULL;
 }
@@ -53,10 +60,8 @@ void http_headers_free(HashTable *headers) {
     for (size_t i = 0; i < headers->capacity; i++) {
       HashTableEntry entry = headers->entries[i];
       if (entry.key != NULL) {
-        String *k = (String *)entry.key;
-        String *v = (String *)entry.value;
-        MEM_FREE(k);
-        MEM_FREE(v);
+        MEM_FREE(entry.key);
+        MEM_FREE(entry.value);
       }
     }
   }
@@ -285,7 +290,13 @@ void http_response_encode(HttpResponse *response, StringBuilder *sb) {
     if (entry.key != NULL) {
       sb_push_sv(sb, *(String *)entry.key);
       sb_push_str(sb, ": ");
-      sb_push_sv(sb, *(String *)entry.value);
+      HeaderValues* values = (HeaderValues*)entry.value;
+      if (values != NULL) {
+        for (int j=0; j<values->length; j++) {
+          sb_push_sv(sb, values->items[j]);
+          sb_push_char(sb, ',');
+        }
+      }
       sb_push_str(sb, CRLF);
     }
   }

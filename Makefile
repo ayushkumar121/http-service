@@ -1,6 +1,6 @@
 MAIN=http-service
 CC=cc
-CFLAGS=-Wall
+CFLAGS=-Wall -g -O0
 LIBS= 
 
 $(MAIN): $(MAIN).c http.o basic.o config.o
