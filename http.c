@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 // For hashtable
@@ -30,26 +31,26 @@ HashTable http_headers_init(void) {
 
 void http_headers_set(HashTable *headers, String key, String value) {
   assert(headers != NULL);
-  String *key_ptr= MEM_REALLOC(NULL, sizeof(String));
-  *key_ptr= key;
+  String *key_ptr = MEM_REALLOC(NULL, sizeof(String));
+  *key_ptr = key;
 
-  HeaderValues* out;
-  if (hash_table_get(headers, key_ptr, (void**)&out)) {
-      array_append(out, value);
+  HeaderValues *out;
+  if (hash_table_get(headers, key_ptr, (void **)&out)) {
+    array_append(out, value);
   } else {
-      HeaderValues* values = MEM_ALLOC(sizeof(HeaderValues));
-      array_append(values,  value);
-      hash_table_set(headers, key_ptr, values);
+    HeaderValues *values = MEM_ALLOC(sizeof(HeaderValues));
+    array_append(values, value);
+    hash_table_set(headers, key_ptr, values);
   }
 }
 
-HeaderValues* http_headers_get(HashTable *headers, String key) {
+HeaderValues *http_headers_get(HashTable *headers, String key) {
   assert(headers != NULL);
   assert(key.length > 0);
 
   void *value = NULL;
   if (hash_table_get(headers, &key, &value)) {
-    return (HeaderValues*)value;
+    return (HeaderValues *)value;
   }
   return NULL;
 }
@@ -69,11 +70,11 @@ void http_headers_free(HashTable *headers) {
 }
 
 HttpServerInitOptions http_server_init_defaults(void) {
-    return (HttpServerInitOptions){
+  return (HttpServerInitOptions){
       .port = HTTP_DEFAULT_PORT,
       .backlog = HTTP_BACKLOG,
       .header_capacity = HTTP_HEADER_CAPACITY,
-    };
+  };
 }
 Error http_server_init(HttpServer *server) {
   return http_server_init_opts(server, http_server_init_defaults());
@@ -196,7 +197,7 @@ HttpError http_parse_request(int client, StringBuilder *sb,
   StringPair p0 = sv_split_str(request_str, CRLF); // (status_line vs rest)
   StringPair p1 = sv_split_delim(p0.first, ' ');   // (method vs rest)
   StringPair p2 = sv_split_delim(p1.second, ' ');  // (path vs rest)
-  StringPair p3 = sv_split_delim(p2.second, ' '); // (proto vs rest)
+  StringPair p3 = sv_split_delim(p2.second, ' ');  // (proto vs rest)
   if (p0.first.length == 0 || p1.first.length == 0 || p2.first.length == 0) {
     return HttpErrorParse;
   }
@@ -258,17 +259,31 @@ String http_status_code_to_string(int status_code) {
     return sv_new("OK");
   case 201:
     return sv_new("Created");
+  case 204:
+    return sv_new("No Content");
   case 301:
     return sv_new("Moved Permanently");
   case 400:
     return sv_new("Bad Request");
   case 404:
     return sv_new("Not Found");
+  case 405:
+    return sv_new("Method Not Allowed");
   case 500:
     return sv_new("Internal Server Error");
   default:
     return sv_new("Unknown");
   }
+}
+
+char *http_date(void) {
+  time_t t;
+  struct tm *tm;
+  time(&t);
+  tm = gmtime(&t);
+  static char buf[40];
+  strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", tm);
+  return buf;
 }
 
 void http_response_encode(HttpResponse *response, StringBuilder *sb) {
@@ -277,9 +292,14 @@ void http_response_encode(HttpResponse *response, StringBuilder *sb) {
   sb_push_str(sb, " ");
   sb_push_sv(sb, http_status_code_to_string(response->status_code));
   sb_push_str(sb, CRLF);
-  sb_push_str(sb, "Content-Length: ");
-  sb_push_long(sb, response->body.length);
-  sb_push_str(sb, CRLF);
+  if (response->body.length > 0) {
+    sb_push_str(sb, "Content-Type: ");
+    sb_push_sv(sb, response->content_type);
+    sb_push_str(sb, CRLF);
+    sb_push_str(sb, "Content-Length: ");
+    sb_push_long(sb, response->body.length);
+    sb_push_str(sb, CRLF);
+  }
   if (response->keep_alive) {
     sb_push_str(sb, "Connection: keep-alive");
     sb_push_str(sb, CRLF);
@@ -287,16 +307,19 @@ void http_response_encode(HttpResponse *response, StringBuilder *sb) {
     sb_push_str(sb, "Connection: close");
     sb_push_str(sb, CRLF);
   }
+  sb_push_str(sb, "Date: ");
+  sb_push_str(sb, http_date());
+  sb_push_str(sb, CRLF);
   for (int i = 0; i < response->headers.capacity; i++) {
     HashTableEntry entry = response->headers.entries[i];
     if (entry.key != NULL) {
       sb_push_sv(sb, *(String *)entry.key);
       sb_push_str(sb, ": ");
-      HeaderValues* values = (HeaderValues*)entry.value;
+      HeaderValues *values = (HeaderValues *)entry.value;
       if (values != NULL) {
-        for (int j=0; j<values->length; j++) {
+        for (int j = 0; j < values->length; j++) {
           sb_push_sv(sb, values->items[j]);
-          sb_push_char(sb, ',');
+          if (j < values->length-1) sb_push_char(sb, ',');
         }
       }
       sb_push_str(sb, CRLF);
@@ -403,11 +426,10 @@ HttpResponse http_response_init(int status_code) {
   return response;
 }
 
-HttpResponse http_json_response(int status, HttpRequest *request, JsonValue *json) {
+HttpResponse http_json_response(int status, HttpRequest *request,
+                                JsonValue *json) {
   HttpResponse response = http_response_init(status);
-
-  http_headers_set(&response.headers, sv_new("Content-Type"),
-                   sv_new("application/json"));
+  response.content_type = sv_new("application/json");
 
   StringBuilder sb = {0};
   json_encode(*json, &sb, 0);
@@ -419,13 +441,9 @@ HttpResponse http_json_response(int status, HttpRequest *request, JsonValue *jso
 }
 
 HttpResponse http_text_response(int status, HttpRequest *request, String body) {
-HttpResponse response = http_response_init(status);
-
-http_headers_set(&response.headers, sv_new("Content-Type"),
-sv_new("text/plain"));
-
-response.body = body;
-response.free_body_after_use = false;
-
-return response;
+  HttpResponse response = http_response_init(status);
+  response.content_type = sv_new("text/plain");
+  response.body = body;
+  response.free_body_after_use = false;
+  return response;
 }

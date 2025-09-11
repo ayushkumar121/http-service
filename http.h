@@ -28,6 +28,7 @@ typedef struct {
 typedef struct {
   int status_code;
   HashTable headers;
+  String content_type;
   String body;
   bool free_body_after_use; // Will call MEM_FREE on body after use
   bool keep_alive;          // Whether to keep the connection alive
