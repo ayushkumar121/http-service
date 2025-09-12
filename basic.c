@@ -6,7 +6,9 @@
 #include <limits.h>
 #include <math.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <sys/stat.h>
 
@@ -99,7 +101,7 @@ void sb_push_sv(StringBuilder *sb, String sv) {
 
 void sb_push_sv_escape(StringBuilder *sb, String sv) {
   for (size_t i = 0; i < sv.length; i++) {
-    char ch = sv.items[i];
+    unsigned char ch = (unsigned char)sv.items[i];
     switch (ch) {
     case '\r':
       sb_push_str(sb, "\\r");
@@ -1062,4 +1064,20 @@ Error write_entire_file(const char *path, String sv) {
   }
   fclose(file);
   return ErrorNil;
+}
+
+#define HEX_CHARSET_LEN 16
+const char hex_chars[] = "0123456789abcdef";
+
+void random_id_seed(void) {
+    srand((unsigned int)time(NULL));
+    fprintf(stderr, "INFO: Random id seed initiliased\n");
+}
+
+String random_id(void) {
+  char* id = talloc(RANDOM_ID_LEN+1);
+  for (size_t i=0; i<RANDOM_ID_LEN; i++) {
+    id[i] = hex_chars[rand() % HEX_CHARSET_LEN];
+  }
+  return sv_new2(id, RANDOM_ID_LEN);
 }

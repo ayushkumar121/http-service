@@ -4,7 +4,7 @@ CFLAGS=-Wall -g -O0
 LIBS= 
 
 $(MAIN): $(MAIN).c http.o basic.o config.o
-	$(CC) -o $(MAIN) $(MAIN).c http.o basic.o config.o $(CFLAGS)
+	$(CC) -o $(MAIN) $(MAIN).c http.o basic.o config.o $(CFLAGS) $(LIBS)
 
 http.o: http.c http.h
 	$(CC) -c -o $@ $< $(CFLAGS)

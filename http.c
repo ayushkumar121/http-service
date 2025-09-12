@@ -202,7 +202,7 @@ HttpError http_parse_request(int client, StringBuilder *sb,
     return HttpErrorParse;
   }
 
-  request->request_id = tprintf("%d", getpid());
+  request->request_id = random_id();
   request->proto = p3.first;
   request->method = p1.first;
   request->path = p2.first;
@@ -387,14 +387,16 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
   assert(server->sockfd > 0);
   assert(callback != NULL);
 
+  random_id_seed();
+
   if (listen(server->sockfd, HTTP_BACKLOG) < 0) {
-    return errorf("listen failed: %s", strerror(errno));
+    return errorf("listen failed: %s\n", strerror(errno));
   }
 
   while (true) {
     int clientfd = accept(server->sockfd, NULL, NULL);
     if (clientfd < 0) {
-      fprintf(stderr, "ERROR: accept failed: %s", strerror(errno));
+      fprintf(stderr, "ERROR: accept failed: %s\n", strerror(errno));
       continue;
     }
 
@@ -405,7 +407,7 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
     pthread_t tid;
     if (pthread_create(&tid, NULL, handle_client, arg) < 0) {
       close(clientfd);
-      fprintf(stderr, "ERROR: pthread create: %s", strerror(errno));
+      fprintf(stderr, "ERROR: pthread create: %s\n", strerror(errno));
       continue;
     }
 

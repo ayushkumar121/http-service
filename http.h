@@ -13,7 +13,7 @@ typedef struct {
 } HttpServer;
 
 typedef struct {
-  String request_id;
+  String request_id; // Temp allocated
   String proto;
   String method;
   String path;

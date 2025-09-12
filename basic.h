@@ -225,4 +225,10 @@ bool file_exists(const char *path);
 Error read_entire_file(const char *path, StringBuilder *sb);
 Error write_entire_file(const char *path, String sv);
 
+// UUID
+#define RANDOM_ID_LEN 12
+
+void random_id_seed(void);
+String random_id(void);
+
 #endif // BASIC_H
