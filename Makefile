@@ -3,6 +3,8 @@ CC=cc
 CFLAGS=-Wall -g -O0
 LIBS= 
 
+all: $(MAIN)
+
 $(MAIN): $(MAIN).c http.o basic.o config.o
 	$(CC) -o $(MAIN) $(MAIN).c http.o basic.o config.o $(CFLAGS) $(LIBS)
 

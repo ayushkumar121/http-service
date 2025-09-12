@@ -8,7 +8,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <sys/stat.h>
 
@@ -54,7 +55,7 @@ Error errorf(const char *format, ...) {
 
 bool has_error(Error err) { return err.message.length > 0; }
 
-void _try(Error err, char *file, int line) {
+void try_(Error err, char *file, int line) {
   if (has_error(err)) {
     fprintf(stderr, "%s:%d: thread paniced: " SV_Fmt "\n", file, line,
             SV_Arg(err.message));
@@ -66,19 +67,19 @@ void _try(Error err, char *file, int line) {
 
 void sb_resize(StringBuilder *sb, size_t new_capacity) {
   sb->capacity = new_capacity;
-  sb->items = MEM_REALLOC(sb->items, sb->capacity + 1);
+  sb->items = realloc(sb->items, sb->capacity + 1);
 }
 
-void sb_free(StringBuilder *sb) { array_free(sb); }
+void sb_free(const StringBuilder *sb) { array_free(sb); }
 
-String sb_to_sv(StringBuilder *sb) {
+String sb_to_sv(const StringBuilder *sb) {
   String sv = {0};
   sv.items = sb->items;
   sv.length = sb->length;
   return sv;
 }
 
-void sb_push_str(StringBuilder *sb, char *str) {
+void sb_push_str(StringBuilder *sb, const char *str) {
   size_t item_len = strlen(str);
   if (sb->capacity < (sb->length + item_len + 1)) {
     sb_resize(sb, sb->capacity + item_len);
@@ -122,7 +123,7 @@ void sb_push_sv_escape(StringBuilder *sb, String sv) {
       if (ch <= 0x1F) {
         sb_push_sv(sb, tprintf("\\u%04x", ch));
       } else {
-        sb_push_char(sb, ch);
+        sb_push_char(sb, sv.items[i]);
       }
     }
   }
@@ -144,21 +145,21 @@ void sb_push_long(StringBuilder *sb, long i) {
     return;
   }
 
-  bool is_neg = i < 0;
-  if (is_neg)
+  bool neg = i < 0;
+  if (neg)
     i *= -1;
 
-  int k = (is_neg) ? log10(i) + 2 : log10(i) + 1;
+  int k = (neg) ? log10(i) + 2 : log10(i) + 1;
   sb_resize(sb, sb->capacity + k);
 
   int j = k;
   while (i != 0) {
-    sb->items[sb->length + j - 1] = i % 10 + '0';
+    sb->items[sb->length + j - 1] = (i % 10) + '0';
     i = i / 10;
     j -= 1;
   }
 
-  if (is_neg)
+  if (neg)
     sb->items[sb->length] = '-';
   sb->length += k;
   sb->items[sb->length] = 0;
@@ -170,7 +171,7 @@ void sb_push_double(StringBuilder *sb, double d) {
   sb_push_long(sb, i);
 
   // Handling fractional part
-  int f = (d - i) * 1000000;
+  int f = ((int)d - i) * 1000000;
   if (f < 0)
     f *= -1;
   if (f > 0) {
@@ -183,7 +184,7 @@ void sb_push_float(StringBuilder *sb, float f) {
   sb_push_double(sb, (double)f);
 }
 
-StringBuilder sb_clone(StringBuilder *sb) {
+StringBuilder sb_clone(const StringBuilder *sb) {
   StringBuilder clone = {0};
   sb_push_str(&clone, sb->items);
   return clone;
@@ -214,7 +215,7 @@ bool sv_equal(String s1, String s2) {
   return true;
 }
 
-bool sv_equal_ignorecase(String s1, String s2) {
+bool sv_equal_ignore_case(String s1, String s2) {
   if (s1.length != s2.length)
     return false;
 
@@ -264,9 +265,9 @@ StringPair sv_split_delim(String sv, char delim) {
   return result;
 }
 
-ssize_t sv_find(String sv, char *str) {
-  size_t i = 0;
-  size_t n = strlen(str);
+ssize_t sv_find(const String sv, const char *str) {
+  ssize_t i = 0;
+  const size_t n = strlen(str);
 
   for (i = 0; i < sv.length; i++) {
     if (sv.items[i] == str[0] && i + n <= sv.length) {
@@ -279,7 +280,7 @@ ssize_t sv_find(String sv, char *str) {
   return -1;
 }
 
-StringPair sv_split_str(String sv, char *str) {
+StringPair sv_split_str(String sv, const char *str) {
   StringPair result = {0};
 
   size_t n = strlen(str);
@@ -312,7 +313,7 @@ StringPair sv_split_str(String sv, char *str) {
 }
 
 String sv_clone(String sv) {
-  char *str_copy = MEM_REALLOC(NULL, sv.length + 1);
+  char *str_copy = realloc(NULL, sv.length + 1);
   memcpy(str_copy, sv.items, sv.length);
   str_copy[sv.length] = 0;
   return sv_new2(str_copy, sv.length);
@@ -352,6 +353,7 @@ String tvprintf(const char *format, va_list args) {
 }
 
 long sv_to_long(String sv, char **endptr) {
+  assert(*endptr != NULL);
   if (sv.length == 0 || sv.items == NULL)
     return 0;
   long l = 0;
@@ -374,21 +376,19 @@ long sv_to_long(String sv, char **endptr) {
   }
 
   for (; i < sv.length; i++) {
-    char ch = sv.items[i];
+    const char ch = sv.items[i];
     if (ch < '0' || ch > '9') {
       *endptr = &sv.items[i];
       return 0;
     }
     long d = ch - '0';
     if (l > (LONG_MAX - d) / 10) {
-      if (endptr)
-        *endptr = &sv.items[i];
+      *endptr = &sv.items[i];
       return neg ? LONG_MIN : LONG_MAX;
     }
     l = l * 10 + d;
   }
-  if (endptr)
-    *endptr = sv.items + sv.length;
+  *endptr = sv.items + sv.length;
   return (neg) ? -l : l;
 }
 
@@ -404,7 +404,8 @@ HashTable hash_table_init(size_t capacity, KeyEqFunc key_eq,
   HashTable v = {0};
 
   size_t sz = capacity * sizeof(HashTableEntry);
-  v.entries = (HashTableEntry *)MEM_REALLOC(NULL, sz);
+  v.entries = (HashTableEntry *)malloc(sz);
+  assert(v.entries != NULL);
   v.capacity = capacity;
   v.key_eq = key_eq;
   v.key_hash = key_hash;
@@ -442,7 +443,7 @@ bool hash_table_set(HashTable *v, void *key, void *val) {
   return true;
 }
 
-bool hash_table_get(HashTable *v, void *key, void **out) {
+bool hash_table_get(const HashTable *v, void *key, void **out) {
   assert(v != NULL && "map is null");
   assert(key != NULL && "key is null");
   assert(v->entries != NULL && "uninitialized map");
@@ -505,7 +506,7 @@ void hash_table_free(HashTable *v) {
   assert(v != NULL && "map is null");
 
   if (v->entries) {
-    MEM_FREE(v->entries);
+    free(v->entries);
     v->entries = NULL;
     v->capacity = 0;
   }
@@ -514,26 +515,26 @@ void hash_table_free(HashTable *v) {
 // Json Encoding & Decoding
 
 JsonValue *json_new_null(void) {
-  JsonValue *value = MEM_REALLOC(NULL, sizeof(JsonValue));
+  JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_NULL;
   return value;
 }
 
 JsonValue *json_new_bool(bool b) {
-  JsonValue *value = MEM_REALLOC(NULL, sizeof(JsonValue));
+  JsonValue *value = malloc(sizeof(JsonValue));
   value->type = (b) ? JSON_TRUE : JSON_FALSE;
   return value;
 }
 
 JsonValue *json_new_number(double n) {
-  JsonValue *value = MEM_REALLOC(NULL, sizeof(JsonValue));
+  JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_NUMBER;
   value->value.number = n;
   return value;
 }
 
 JsonValue *json_new_string(String s) {
-  JsonValue *value = MEM_REALLOC(NULL, sizeof(JsonValue));
+  JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_STRING;
   StringBuilder sb = {0}; // This will be freed when json is freed
   sb_push_sv_escape(&sb, s);
@@ -541,33 +542,33 @@ JsonValue *json_new_string(String s) {
   return value;
 }
 
-JsonValue *json_new_cstring(char *s) {
-  JsonValue *value = MEM_REALLOC(NULL, sizeof(JsonValue));
+JsonValue *json_new_cstr(char *s) {
+  JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_STRING;
   value->value.string = sv_clone(sv_new(s));
   return value;
 }
 
 JsonValue *json_new_array(void) {
-  JsonValue *value = MEM_REALLOC(NULL, sizeof(JsonValue));
+  JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_ARRAY;
   value->value.array = (JsonArray){0};
   return value;
 }
 
 JsonValue *json_new_object(void) {
-  JsonValue *value = MEM_REALLOC(NULL, sizeof(JsonValue));
+  JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_OBJECT;
   value->value.object = (JsonObject){0};
   return value;
 }
 
-Error _json_error(Error cause, String s, const char *file, int line) {
+Error json_error_(Error cause, String s, const char *file, int line) {
   return errorf(SV_Fmt ": \"" SV_Fmt "\" at %s:%d", SV_Arg(cause.message),
                 SV_Arg(s), file, line);
 }
 
-#define json_error(cause, s) _json_error(cause, s, __FILE__, __LINE__)
+#define json_error(cause, s) json_error_(cause, s, __FILE__, __LINE__)
 
 bool json_is_end_char(char ch) { return ch == ',' || ch == ']' || ch == '}'; }
 
@@ -579,7 +580,7 @@ bool json_consume_char(String *sv) {
   return true;
 }
 
-bool json_consume_literal(String *sv, char *str, size_t n) {
+bool json_consume_literal(String *sv, const char *str, size_t n) {
   if (sv->length < n)
     return false;
 
@@ -707,10 +708,8 @@ Error json_decode_object(String *sv, JsonValue **out) {
     }
 
     JsonObjectEntry entry = {0};
-    Error err;
-
     JsonValue *key = NULL;
-    err = json_decode_string(sv, &key);
+    Error err = json_decode_string(sv, &key);
     if (has_error(err))
       return err;
     entry.key = key;
@@ -788,19 +787,19 @@ Error json_decode(String sv, JsonValue **out) {
   return ErrorNil;
 }
 
-JsonNumber json_get_number(JsonValue *json) {
+JsonNumber json_get_number(const JsonValue *json) {
   assert(json != NULL);
   assert(json->type == JSON_NUMBER);
   return json->value.number;
 }
 
-JsonString json_get_string(JsonValue *json) {
+JsonString json_get_string(const JsonValue *json) {
   assert(json != NULL);
   assert(json->type == JSON_STRING);
   return json->value.string;
 }
 
-JsonValue *json_object_get(JsonValue *json, String key) {
+JsonValue *json_object_get(const JsonValue *json, String key) {
   assert(json != NULL);
   assert(json->type == JSON_OBJECT);
   for (size_t i = 0; i < json->value.object.length; i++) {
@@ -812,11 +811,11 @@ JsonValue *json_object_get(JsonValue *json, String key) {
   return NULL;
 }
 
-JsonValue *json_get(JsonValue *json, String key) {
+JsonValue *json_get(const JsonValue *json, String key) {
   assert(json != NULL);
 
   StringPair p = sv_split_delim(key, '.');
-  JsonValue *value = json;
+  JsonValue *value = (JsonValue*)json;
   while (p.first.length != 0) {
     if (value->type == JSON_OBJECT) {
       value = json_object_get(value, p.first);
@@ -841,27 +840,22 @@ JsonValue *json_get(JsonValue *json, String key) {
 void json_object_set(JsonValue *json, String key, JsonValue *val) {
   assert(json != NULL);
   assert(json->type == JSON_OBJECT);
-  int index = -1;
   for (size_t i = 0; i < json->value.object.length; i++) {
-    JsonObjectEntry entry = json->value.object.items[i];
+    const JsonObjectEntry entry = json->value.object.items[i];
     if (sv_equal(entry.key->value.string, key)) {
-      index = i;
-      break;
+      json->value.object.items[i].value = val;
+      return;
     }
   }
 
-  if (index >= 0) {
-    json->value.object.items[index].value = val;
-  } else {
-    array_append(&json->value.object,
-                 ((JsonObjectEntry){json_new_string(key), val}));
-  }
+  array_append(&json->value.object,
+             ((JsonObjectEntry){json_new_string(key), val}));
 }
 
 bool json_object_remove(JsonValue *json, String key) {
   assert(json != NULL);
   assert(json->type == JSON_OBJECT);
-  int index = -1;
+  size_t index = -1;
   for (size_t i = 0; i < json->value.object.length; i++) {
     JsonObjectEntry entry = json->value.object.items[i];
     if (sv_equal(entry.key->value.string, key)) {
@@ -878,7 +872,7 @@ bool json_object_remove(JsonValue *json, String key) {
   return false;
 }
 
-JsonValue *json_array_get(JsonValue *json, int i) {
+JsonValue *json_array_get(const JsonValue *json, int i) {
   assert(json != NULL);
   assert(json->type == JSON_ARRAY);
   assert(i < json->value.array.length);
@@ -904,7 +898,7 @@ void sb_push_whitespace(StringBuilder *sb, int indent) {
   }
 }
 
-void _json_encode(JsonValue json, StringBuilder *sb, int pp, int indent) {
+void json_encode_(JsonValue json, StringBuilder *sb, int pp, int indent) {
   switch (json.type) {
   case JSON_NULL:
     sb_push_str(sb, "null");
@@ -932,7 +926,7 @@ void _json_encode(JsonValue json, StringBuilder *sb, int pp, int indent) {
     for (int i = 0; i < json.value.array.length; i++) {
       if (pp > 0)
         sb_push_whitespace(sb, indent);
-      _json_encode(*json.value.array.items[i], sb, pp, indent + pp);
+      json_encode_(*json.value.array.items[i], sb, pp, indent + pp);
       if (i < json.value.array.length - 1)
         sb_push_char(sb, ',');
       if (pp > 0)
@@ -952,9 +946,9 @@ void _json_encode(JsonValue json, StringBuilder *sb, int pp, int indent) {
     for (int i = 0; i < json.value.object.length; i++) {
       if (pp > 0)
         sb_push_whitespace(sb, indent);
-      _json_encode(*json.value.object.items[i].key, sb, pp, indent + pp);
+      json_encode_(*json.value.object.items[i].key, sb, pp, indent + pp);
       sb_push_char(sb, ':');
-      _json_encode(*json.value.object.items[i].value, sb, pp, indent + pp);
+      json_encode_(*json.value.object.items[i].value, sb, pp, indent + pp);
       if (i < json.value.array.length - 1)
         sb_push_char(sb, ',');
       if (pp > 0)
@@ -968,8 +962,8 @@ void _json_encode(JsonValue json, StringBuilder *sb, int pp, int indent) {
   }
 }
 
-void json_encode(JsonValue json, StringBuilder *sb, int pp) {
-  return _json_encode(json, sb, pp, pp);
+void json_encode(const JsonValue json, StringBuilder *sb, int pp) {
+  return json_encode_(json, sb, pp, pp);
 }
 
 void json_print(FILE *f, JsonValue json, int pp) {
@@ -980,16 +974,18 @@ void json_print(FILE *f, JsonValue json, int pp) {
 }
 
 void json_free(JsonValue *json) {
+  assert(json != NULL);
+
   switch (json->type) {
   case JSON_NULL:
   case JSON_TRUE:
   case JSON_FALSE:
   case JSON_NUMBER:
-    MEM_FREE(json);
+    free(json);
     break;
   case JSON_STRING:
-    MEM_FREE(json->value.string.items);
-    MEM_FREE(json);
+    free(json->value.string.items);
+    free(json);
     break;
 
   case JSON_ARRAY: {
@@ -997,8 +993,8 @@ void json_free(JsonValue *json) {
       json_free(json->value.array.items[i]);
     }
     if (json->value.array.items)
-      MEM_FREE(json->value.array.items);
-    MEM_FREE(json);
+      free(json->value.array.items);
+    free(json);
     break;
   }
 
@@ -1008,8 +1004,8 @@ void json_free(JsonValue *json) {
       json_free(json->value.object.items[i].value);
     }
     if (json->value.object.items)
-      MEM_FREE(json->value.object.items);
-    MEM_FREE(json);
+      free(json->value.object.items);
+    free(json);
     break;
   }
   }
@@ -1043,7 +1039,7 @@ Error read_entire_file(const char *path, StringBuilder *sb) {
   if (file == NULL) {
     return ErrorReadFile;
   }
-  int n = fread(sb->items, 1, size, file);
+  size_t n = fread(sb->items, 1, size, file);
   if (n != size) {
     return errorf("failed to read file %s: %s", path, strerror(errno));
   }
@@ -1058,7 +1054,7 @@ Error write_entire_file(const char *path, String sv) {
   if (file == NULL) {
     return ErrorWriteFile;
   }
-  int n = fwrite(sv.items, 1, sv.length, file);
+  size_t n = fwrite(sv.items, 1, sv.length, file);
   if (n != sv.length) {
     return errorf("failed to write file %s: %s", path, strerror(errno));
   }
@@ -1069,15 +1065,30 @@ Error write_entire_file(const char *path, String sv) {
 #define HEX_CHARSET_LEN 16
 const char hex_chars[] = "0123456789abcdef";
 
-void random_id_seed(void) {
-    srand((unsigned int)time(NULL));
-    fprintf(stderr, "INFO: Random id seed initiliased\n");
+Error get_random_bytes(char* buf, size_t n) {
+  assert(buf != NULL);
+  int fd = open("/dev/urandom", O_RDONLY);
+  if (fd == -1) {
+    return errorf("failed to open /dev/urandom: %s", strerror(errno));
+  }
+
+  if (read(fd, buf, n) != n) {
+    close(fd);
+    return errorf("failed to read from /dev/urandom: %s", strerror(errno));
+  }
+  close(fd);
+
+  return ErrorNil;
 }
 
 String random_id(void) {
+  unsigned char raw[RANDOM_ID_LEN];
+  try(get_random_bytes((char*)raw, RANDOM_ID_LEN));
+
   char* id = talloc(RANDOM_ID_LEN+1);
-  for (size_t i=0; i<RANDOM_ID_LEN; i++) {
-    id[i] = hex_chars[rand() % HEX_CHARSET_LEN];
+  for (size_t i = 0; i < RANDOM_ID_LEN; ++i) {
+    id[i] = hex_chars[raw[i] % HEX_CHARSET_LEN];
   }
+  id[RANDOM_ID_LEN] = 0;
   return sv_new2(id, RANDOM_ID_LEN);
 }

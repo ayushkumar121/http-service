@@ -12,17 +12,17 @@
 bool header_key_eq(void *a, void *b) {
   String *sa = a;
   String *sb = b;
-  return sv_equal_ignorecase(*sa, *sb);
+  return sv_equal_ignore_case(*sa, *sb);
 }
 
 // hash: https://theartincode.stanis.me/008-djb2/
-size_t header_key_hash(int cap, void *a) {
+size_t header_key_hash(size_t capacity, void *a) {
   String *s = a;
   size_t hash = 5381;
   for (size_t i = 0; i < s->length; i++) {
     hash = ((hash << 5) + hash) + (unsigned char)(tolower(s->items[i]));
   }
-  return hash % cap;
+  return hash % capacity;
 }
 
 HashTable http_headers_init(void) {
@@ -31,14 +31,14 @@ HashTable http_headers_init(void) {
 
 void http_headers_set(HashTable *headers, String key, String value) {
   assert(headers != NULL);
-  String *key_ptr = MEM_REALLOC(NULL, sizeof(String));
+  String *key_ptr = malloc(sizeof(String));
   *key_ptr = key;
 
   HeaderValues *out;
   if (hash_table_get(headers, key_ptr, (void **)&out)) {
     array_append(out, value);
   } else {
-    HeaderValues *values = MEM_ALLOC(sizeof(HeaderValues));
+    HeaderValues *values = malloc(sizeof(HeaderValues));
     array_append(values, value);
     hash_table_set(headers, key_ptr, values);
   }
@@ -61,8 +61,8 @@ void http_headers_free(HashTable *headers) {
     for (size_t i = 0; i < headers->capacity; i++) {
       HashTableEntry entry = headers->entries[i];
       if (entry.key != NULL) {
-        MEM_FREE(entry.key);
-        MEM_FREE(entry.value);
+        free(entry.key);
+        free(entry.value);
       }
     }
   }
@@ -161,7 +161,7 @@ String http_error_to_string(HttpError err) {
     return sv_new("read error");
   case HttpErrorParse:
     return sv_new("parse error");
-  case HttpErrorUnknown:
+  default:
     return sv_new("unknown");
   }
 }
@@ -170,7 +170,7 @@ HttpError http_parse_request(int client, StringBuilder *sb,
                              HttpRequest *request) {
   assert(request != NULL);
 
-  ssize_t header_end = -1;
+  ssize_t header_end;
   char *buffer = talloc(HTTP_READ_BUFFER_SIZE); // Temp allocated buffer
 
   while (true) {
@@ -338,7 +338,7 @@ void *handle_client(void *arg) {
   ClientThreadArgs *args = arg;
   int clientfd = args->clientfd;
   HttpListenCallback callback = args->callback;
-  MEM_FREE(arg);
+  free(arg);
 
   StringBuilder request_sb = {0};
   StringBuilder response_sb = {0};
@@ -368,7 +368,7 @@ void *handle_client(void *arg) {
 
     // Cleanup
     if (response.free_body_after_use)
-      MEM_FREE(response.body.items);
+      free(response.body.items);
     http_headers_free(&response.headers);
 
     if (!response.keep_alive) {
@@ -387,8 +387,6 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
   assert(server->sockfd > 0);
   assert(callback != NULL);
 
-  random_id_seed();
-
   if (listen(server->sockfd, HTTP_BACKLOG) < 0) {
     return errorf("listen failed: %s\n", strerror(errno));
   }
@@ -400,7 +398,7 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
       continue;
     }
 
-    ClientThreadArgs *arg = MEM_REALLOC(NULL, sizeof(ClientThreadArgs));
+    ClientThreadArgs *arg = malloc(sizeof(ClientThreadArgs));
     arg->clientfd = clientfd;
     arg->callback = callback;
 
