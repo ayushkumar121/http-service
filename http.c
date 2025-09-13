@@ -336,8 +336,8 @@ typedef struct {
 
 void *handle_client(void *arg) {
   ClientThreadArgs *args = arg;
-  int clientfd = args->clientfd;
-  HttpListenCallback callback = args->callback;
+  const int clientfd = args->clientfd;
+  const HttpListenCallback callback = args->callback;
   free(arg);
 
   StringBuilder request_sb = {0};
@@ -382,7 +382,7 @@ void *handle_client(void *arg) {
   return NULL;
 }
 
-Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
+Error http_server_listen(const HttpServer *server, HttpListenCallback callback) {
   assert(server != NULL);
   assert(server->sockfd > 0);
   assert(callback != NULL);
@@ -415,7 +415,7 @@ Error http_server_listen(HttpServer *server, HttpListenCallback callback) {
   return ErrorNil;
 }
 
-void http_server_free(HttpServer *server) { close(server->sockfd); }
+void http_server_free(const HttpServer *server) { close(server->sockfd); }
 
 HttpResponse http_response_init(int status_code) {
   HttpResponse response = {0};

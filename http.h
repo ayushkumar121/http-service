@@ -3,7 +3,6 @@
 
 #include "basic.h"
 
-#include <sys/socket.h>
 #include <netinet/in.h>
 
 // HTTP Server
@@ -56,8 +55,8 @@ typedef struct {
 Error http_server_init(HttpServer *server);
 HttpServerInitOptions http_server_init_defaults(void);
 Error http_server_init_opts(HttpServer *server, HttpServerInitOptions options);
-Error http_server_listen(HttpServer *server, HttpListenCallback callback);
-void http_server_free(HttpServer *server);
+Error http_server_listen(const HttpServer *server, HttpListenCallback callback);
+void http_server_free(const HttpServer *server);
 
 HttpResponse http_response_init(int status_code);
 HttpResponse http_json_response(int status, HttpRequest *request, JsonValue *json);
