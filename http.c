@@ -117,7 +117,7 @@ Error http_server_init_opts(HttpServer *server, HttpServerInitOptions opt) {
 
 #define CRLF "\r\n"
 
-void http_response_write(const int client_fd, const char *buffer, size_t length) {
+void http_response_write(const int client_fd, const char *buffer, const size_t length) {
   assert(buffer != NULL);
   assert(length > 0);
 
@@ -149,7 +149,7 @@ typedef enum {
   HttpErrorUnknown,
 } HttpError;
 
-String http_error_to_string(HttpError err) {
+String http_error_to_string(const HttpError err) {
   switch (err) {
   case HttpErrorNil:
     return sv_new("nil");
@@ -166,7 +166,12 @@ String http_error_to_string(HttpError err) {
   }
 }
 
-HttpError http_parse_request(int client, StringBuilder *sb,
+String http_request_to_string(const HttpRequest request) {
+  return tprintf(SV_Fmt " " SV_Fmt " " SV_Fmt " ",
+    SV_Arg(request.method), SV_Arg(request.path), SV_Arg(request.proto));
+}
+
+HttpError http_parse_request(const int client, StringBuilder *sb,
                              HttpRequest *request) {
   assert(request != NULL);
 
@@ -223,11 +228,10 @@ HttpError http_parse_request(int client, StringBuilder *sb,
 
     if (sv_equal(key, sv_new("Content-Length"))) {
       char* endptr = NULL;
-      if (endptr >= value.items + value.length) {
-        content_length = sv_to_long(value, &endptr);
-        INFO("Content-Length: %ld", content_length);
-      } else {
+      content_length = sv_to_long(value, &endptr);
+      if (endptr != value.items + value.length) {
         ERROR("invalid content length");
+        return  HttpErrorParse;
       }
     }
 
@@ -259,7 +263,7 @@ HttpError http_parse_request(int client, StringBuilder *sb,
   return 0;
 }
 
-String http_status_code_to_string(int status_code) {
+String http_status_code_to_string(const int status_code) {
   switch (status_code) {
   case 200:
     return sv_new("OK");
@@ -320,7 +324,7 @@ void http_response_encode(const HttpResponse *response, StringBuilder *sb) {
     if (entry.key != NULL) {
       sb_push_sv(sb, *(String *)entry.key);
       sb_push_str(sb, ": ");
-      HeaderValues *values = (HeaderValues *)entry.value;
+      const HeaderValues *values = (HeaderValues *)entry.value;
       if (values != NULL) {
         for (int j = 0; j < values->length; j++) {
           sb_push_sv(sb, values->items[j]);
@@ -364,6 +368,8 @@ void *handle_client(void *arg) {
       ERROR("http parse request failed: " SV_Fmt "\n", SV_Arg(http_error_to_string(err)));
       break;
     }
+
+    INFO("request received: " SV_Fmt, SV_Arg(http_request_to_string(request)));
 
     HttpResponse response = callback(&request);
 

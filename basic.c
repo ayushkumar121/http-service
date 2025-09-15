@@ -324,7 +324,7 @@ String tvprintf(const char *format, va_list args) {
 }
 
 long sv_to_long(String sv, char **endptr) {
-  assert(*endptr != NULL);
+  assert(endptr != NULL);
   if (sv.length == 0 || sv.items == NULL)
     return 0;
   long l = 0;
