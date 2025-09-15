@@ -215,7 +215,7 @@ HttpError http_parse_request(int client, StringBuilder *sb,
     StringPair header_line_headers_pair = sv_split_str(sv, CRLF);        // header_line vs rest
     StringPair header_pair = sv_split_delim(header_line_headers_pair.first, ':'); // header_key vs header_value
 
-    String key = sv_trim_left(header_pair.second);
+    String key = sv_trim_left(header_pair.first);
     String value = sv_trim_left(header_pair.second);
     if (key.length == 0 || value.length == 0) {
       break;
