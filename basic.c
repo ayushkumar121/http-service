@@ -57,7 +57,7 @@ bool has_error(Error err) { return err.message.length > 0; }
 
 void try_(Error err, char *file, int line) {
   if (has_error(err)) {
-    fprintf(stderr, "%s:%d: thread paniced: " SV_Fmt "\n", file, line,
+    ERROR("%s:%d: thread panicked: " SV_Fmt "\n", file, line,
             SV_Arg(err.message));
     exit(1);
   }
@@ -151,8 +151,8 @@ void sb_push_double(StringBuilder *sb, double d) {
   }
 }
 
-void sb_push_float(StringBuilder *sb, float f) {
-  sb_push_double(sb, (double)f);
+void sb_push_float(StringBuilder *sb, const float f) {
+  sb_push_double(sb, f);
 }
 
 StringBuilder sb_clone(const StringBuilder *sb) {
@@ -820,9 +820,9 @@ JsonValue *json_get(const JsonValue *json, String key) {
     if (value->type == JSON_OBJECT) {
       value = json_object_get(value, p.first);
     } else if (value->type == JSON_ARRAY) {
-      char *endptr = NULL;
-      int index = sv_to_int(p.first, &endptr);
-      if (endptr > p.first.items) {
+      char *endptr;
+      const int index = sv_to_int(p.first, &endptr);
+      if (endptr == p.first.items + p.first.length) {
         value = json_array_get(value, index);
       } else {
         return NULL;

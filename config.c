@@ -3,7 +3,7 @@
 
 static JsonValue* config = NULL;
 
-Error config_load(char *path) {
+Error config_load(const char *path) {
   assert(path != NULL);
   if (!file_exists(path)) {
     return errorf("file %s does not exist", path);
@@ -18,6 +18,10 @@ Error config_load(char *path) {
     return err;
   }
   sb_free(&sb);
+
+  INFO("config loaded successfully");
+  json_print(stderr, *config, 4);
+
   return ErrorNil;
 }
 

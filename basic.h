@@ -7,6 +7,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#define DEBUG(format, ...) fprintf(stderr, "DEBUG: " format "\n", ##__VA_ARGS__)
+#define INFO(format, ...) fprintf(stderr, "INFO: " format "\n", ##__VA_ARGS__)
+#define WARN(format, ...) fprintf(stderr, "WARN: " format "\n", ##__VA_ARGS__)
+#define ERROR(format, ...) fprintf(stderr, "ERROR: " format "\n", ##__VA_ARGS__)
+
 #define PAIR(T1, T2)                                                           \
   struct {                                                                     \
     T1 first;                                                                  \

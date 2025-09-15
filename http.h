@@ -7,7 +7,7 @@
 
 // HTTP Server
 typedef struct {
-  int sockfd;
+  int sock_fd;
   struct sockaddr_in addr;
 } HttpServer;
 
@@ -19,7 +19,7 @@ typedef struct {
   String body;
   
   // Keys and Values are heap allocated strings which freed after use
-  // headers are multi key map eg. foo: [bar, buz]
+  // headers are multi key map e.g. foo: [bar, buz]
   HashTable headers;
   String raw_request;
 } HttpRequest;
@@ -43,7 +43,7 @@ typedef ARRAY(String) HeaderValues;
 
 HashTable http_headers_init(void);
 void http_headers_set(HashTable *headers, String key, String value);
-HeaderValues *http_headers_get(HashTable *headers, String key);
+HeaderValues *http_headers_get(const HashTable *headers, String key);
 void http_headers_free(HashTable *headers);
 
 typedef struct {

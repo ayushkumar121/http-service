@@ -1,6 +1,6 @@
 MAIN=http-service
 CC=cc
-CFLAGS=-Wall -g -O0
+CFLAGS=-Wall -g
 LIBS= 
 
 all: $(MAIN)

@@ -44,7 +44,7 @@ void http_headers_set(HashTable *headers, String key, String value) {
   }
 }
 
-HeaderValues *http_headers_get(HashTable *headers, String key) {
+HeaderValues *http_headers_get(const HashTable *headers, String key) {
   assert(headers != NULL);
   assert(key.length > 0);
 
@@ -83,21 +83,21 @@ Error http_server_init(HttpServer *server) {
 Error http_server_init_opts(HttpServer *server, HttpServerInitOptions opt) {
   assert(server != NULL);
 
-  server->sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (server->sockfd < 0) {
+  server->sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (server->sock_fd < 0) {
     return errorf("socket failed: %s", strerror(errno));
   }
 
   int socket_options = 1;
 #ifdef SO_REUSEADDR
-  if (setsockopt(server->sockfd, SOL_SOCKET, SO_REUSEADDR, &socket_options,
+  if (setsockopt(server->sock_fd, SOL_SOCKET, SO_REUSEADDR, &socket_options,
                  sizeof(socket_options)) < 0) {
     return errorf("setsockopt failed: %s", strerror(errno));
   }
 #endif
 
 #ifdef SO_REUSEPORT
-  if (setsockopt(server->sockfd, SOL_SOCKET, SO_REUSEPORT, &socket_options,
+  if (setsockopt(server->sock_fd, SOL_SOCKET, SO_REUSEPORT, &socket_options,
                  sizeof(socket_options)) < 0) {
     return errorf("setsockopt failed: %s", strerror(errno));
   }
@@ -107,7 +107,7 @@ Error http_server_init_opts(HttpServer *server, HttpServerInitOptions opt) {
   server->addr.sin_addr.s_addr = INADDR_ANY;
   server->addr.sin_port = htons(opt.port);
 
-  if (bind(server->sockfd, (struct sockaddr *)&server->addr,
+  if (bind(server->sock_fd, (struct sockaddr *)&server->addr,
            sizeof(server->addr)) < 0) {
     return errorf("bind failed: %s", strerror(errno));
   }
@@ -117,18 +117,18 @@ Error http_server_init_opts(HttpServer *server, HttpServerInitOptions opt) {
 
 #define CRLF "\r\n"
 
-void http_response_write(int clientfd, char *buffer, size_t length) {
+void http_response_write(const int client_fd, const char *buffer, size_t length) {
   assert(buffer != NULL);
   assert(length > 0);
 
   size_t total_written = 0;
   while (total_written < length) {
-    int n = write(clientfd, buffer + total_written, length - total_written);
+    const ssize_t n = write(client_fd, buffer + total_written, length - total_written);
     if (n < 0) {
-      fprintf(stderr, "write failed: %s", strerror(errno));
       if (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK) {
         continue;
       }
+      ERROR("write failed: %s", strerror(errno));
       break;
     }
     if (n == 0) {
@@ -174,7 +174,7 @@ HttpError http_parse_request(int client, StringBuilder *sb,
   char *buffer = talloc(HTTP_READ_BUFFER_SIZE); // Temp allocated buffer
 
   while (true) {
-    int n = read(client, buffer, HTTP_READ_BUFFER_SIZE);
+    const ssize_t n = read(client, buffer, HTTP_READ_BUFFER_SIZE);
     if (n < 0) {
       if (errno == ECONNRESET) {
         return HttpErrorConnectionReset;
@@ -210,32 +210,38 @@ HttpError http_parse_request(int client, StringBuilder *sb,
 
   // Parsing the headers
   size_t content_length = 0;
-  String sv = sv_trim(p0.second);
+  String sv = p0.second;
   while (sv.length > 0) {
-    StringPair p0 = sv_split_str(sv, CRLF);        // header_line vs rest
-    StringPair p1 = sv_split_delim(p0.first, ':'); // header_key vs header_value
+    StringPair header_line_headers_pair = sv_split_str(sv, CRLF);        // header_line vs rest
+    StringPair header_pair = sv_split_delim(header_line_headers_pair.first, ':'); // header_key vs header_value
 
-    String key = sv_trim(p1.first);
-    String value = sv_trim(p1.second);
+    String key = sv_trim_left(header_pair.second);
+    String value = sv_trim_left(header_pair.second);
     if (key.length == 0 || value.length == 0) {
       break;
     }
 
     if (sv_equal(key, sv_new("Content-Length"))) {
-      content_length = atoi(value.items);
+      char* endptr = NULL;
+      if (endptr >= value.items + value.length) {
+        content_length = sv_to_long(value, &endptr);
+        INFO("Content-Length: %ld", content_length);
+      } else {
+        ERROR("invalid content length");
+      }
     }
 
     http_headers_set(&request->headers, key, value);
-    sv = p0.second;
+    sv = header_line_headers_pair.second;
   }
 
   // Read body if not read yet
   while (sb->length < (header_end + 4 + content_length)) {
-    int to_read = header_end + 4 + content_length - sb->length;
+    size_t to_read = header_end + 4 + content_length - sb->length;
     if (to_read > HTTP_READ_BUFFER_SIZE) {
       to_read = HTTP_READ_BUFFER_SIZE;
     }
-    int n = read(client, buffer, to_read);
+    ssize_t n = read(client, buffer, to_read);
     if (n < 0) {
       if (errno == ECONNRESET || errno == EPIPE) {
         return HttpErrorConnectionReset;
@@ -278,15 +284,14 @@ String http_status_code_to_string(int status_code) {
 
 char *http_date(void) {
   time_t t;
-  struct tm *tm;
   time(&t);
-  tm = gmtime(&t);
+  struct tm *tm = gmtime(&t);
   static char buf[40];
   strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", tm);
   return buf;
 }
 
-void http_response_encode(HttpResponse *response, StringBuilder *sb) {
+void http_response_encode(const HttpResponse *response, StringBuilder *sb) {
   sb_push_str(sb, "HTTP/1.1 ");
   sb_push_long(sb, response->status_code);
   sb_push_str(sb, " ");
@@ -336,7 +341,7 @@ typedef struct {
 
 void *handle_client(void *arg) {
   ClientThreadArgs *args = arg;
-  const int clientfd = args->clientfd;
+  const int client_fd = args->clientfd;
   const HttpListenCallback callback = args->callback;
   free(arg);
 
@@ -351,20 +356,19 @@ void *handle_client(void *arg) {
     response_sb.length = 0;
 
     HttpRequest request = {0};
-    HttpError err = http_parse_request(clientfd, &request_sb, &request);
+    const HttpError err = http_parse_request(client_fd, &request_sb, &request);
     if (err == HttpErrorEOF || err == HttpErrorConnectionReset) {
       break;
     }
     if (err != HttpErrorNil) {
-      fprintf(stderr, "ERROR: http parse request failed: " SV_Fmt "\n",
-              SV_Arg(http_error_to_string(err)));
+      ERROR("http parse request failed: " SV_Fmt "\n", SV_Arg(http_error_to_string(err)));
       break;
     }
 
     HttpResponse response = callback(&request);
 
     http_response_encode(&response, &response_sb);
-    http_response_write(clientfd, response_sb.items, response_sb.length);
+    http_response_write(client_fd, response_sb.items, response_sb.length);
 
     // Cleanup
     if (response.free_body_after_use)
@@ -376,7 +380,7 @@ void *handle_client(void *arg) {
     }
   }
 
-  close(clientfd);
+  close(client_fd);
   sb_free(&request_sb);
   sb_free(&response_sb);
   return NULL;
@@ -384,38 +388,40 @@ void *handle_client(void *arg) {
 
 Error http_server_listen(const HttpServer *server, HttpListenCallback callback) {
   assert(server != NULL);
-  assert(server->sockfd > 0);
+  assert(server->sock_fd > 0);
   assert(callback != NULL);
 
-  if (listen(server->sockfd, HTTP_BACKLOG) < 0) {
+  if (listen(server->sock_fd, HTTP_BACKLOG) < 0) {
     return errorf("listen failed: %s\n", strerror(errno));
   }
 
+  INFO("server started");
   while (true) {
-    int clientfd = accept(server->sockfd, NULL, NULL);
-    if (clientfd < 0) {
-      fprintf(stderr, "ERROR: accept failed: %s\n", strerror(errno));
+    const int client_fd = accept(server->sock_fd, NULL, NULL);
+    if (client_fd < 0) {
+      ERROR("accept failed: %s\n", strerror(errno));
       continue;
     }
 
     ClientThreadArgs *arg = malloc(sizeof(ClientThreadArgs));
-    arg->clientfd = clientfd;
+    arg->clientfd = client_fd;
     arg->callback = callback;
 
     pthread_t tid;
-    if (pthread_create(&tid, NULL, handle_client, arg) < 0) {
-      close(clientfd);
-      fprintf(stderr, "ERROR: pthread create: %s\n", strerror(errno));
+    if (pthread_create(&tid, NULL, handle_client, arg) != 0) {
+      free(arg);
+      close(client_fd);
+      ERROR("pthread_create failed: %s\n", strerror(errno));
       continue;
     }
 
     pthread_detach(tid);
   }
 
-  return ErrorNil;
+  assert(false && "unreachable");
 }
 
-void http_server_free(const HttpServer *server) { close(server->sockfd); }
+void http_server_free(const HttpServer *server) { close(server->sock_fd); }
 
 HttpResponse http_response_init(int status_code) {
   HttpResponse response = {0};

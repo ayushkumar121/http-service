@@ -1,3 +1,2 @@
--std=c23
 -Wall
 -I/usr/local/mysql/include

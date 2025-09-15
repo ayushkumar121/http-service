@@ -29,18 +29,12 @@ HttpResponse http_listen_callback(HttpRequest* request) {
 
 int main(int argc, char** argv) {
   try(config_load("config.json"));
-  
+
   HttpServer server = {0};
   HttpServerInitOptions options = http_server_init_defaults();
   options.port = config_get_int(sv_new("server.port"), 8080); 
 
   try(http_server_init_opts(&server, options));
-  fprintf(stderr, "INFO: Server initialized\n");
-  
   try(http_server_listen(&server, http_listen_callback));
-  
-  http_server_free(&server);
-  config_free();
-
   return 0;
 }
