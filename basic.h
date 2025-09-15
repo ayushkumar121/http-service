@@ -70,7 +70,6 @@ void sb_free(const StringBuilder *sb);
 
 void sb_push_str(StringBuilder *sb, const char *str);
 void sb_push_sv(StringBuilder *sb, String sv);
-void sb_push_sv_escape(StringBuilder *sb, String sv);
 void sb_push_char(StringBuilder *sb, char ch);
 void sb_push_long(StringBuilder *sb, long l);
 void sb_push_double(StringBuilder *sb, double d);
@@ -98,8 +97,11 @@ String sv_clone(String sv); // Clones the string on the heap
 String tprintf(const char *format, ...) __attribute__((format(printf, 1, 2)));
 String tvprintf(const char *format, va_list);
 
+// endptr saves the
 long sv_to_long(String sv, char **endptr);
 int sv_to_int(String sv, char **endptr);
+
+String sv_escape(String sv); // This heap allocates memory
 
 // Hash Table
 

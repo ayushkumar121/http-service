@@ -100,35 +100,6 @@ void sb_push_sv(StringBuilder *sb, String sv) {
   sb->items[sb->length] = 0;
 }
 
-void sb_push_sv_escape(StringBuilder *sb, String sv) {
-  for (size_t i = 0; i < sv.length; i++) {
-    unsigned char ch = (unsigned char)sv.items[i];
-    switch (ch) {
-    case '\r':
-      sb_push_str(sb, "\\r");
-      break;
-    case '\n':
-      sb_push_str(sb, "\\n");
-      break;
-    case '\t':
-      sb_push_str(sb, "\\t");
-      break;
-    case '\"':
-      sb_push_str(sb, "\\\"");
-      break;
-    case '\\':
-      sb_push_str(sb, "\\\\");
-      break;
-    default:
-      if (ch <= 0x1F) {
-        sb_push_sv(sb, tprintf("\\u%04x", ch));
-      } else {
-        sb_push_char(sb, sv.items[i]);
-      }
-    }
-  }
-}
-
 void sb_push_char(StringBuilder *sb, char ch) {
   if (sb->capacity < (sb->length + 2)) {
     sb_resize(sb, sb->capacity + 1);
@@ -394,6 +365,37 @@ long sv_to_long(String sv, char **endptr) {
 
 int sv_to_int(String sv, char **endptr) { return (int)sv_to_long(sv, endptr); }
 
+String sv_escape(String sv) {
+  StringBuilder sb = {0};
+  for (size_t i = 0; i < sv.length; i++) {
+    unsigned char ch = (unsigned char)sv.items[i];
+    switch (ch) {
+      case '\r':
+        sb_push_str(&sb, "\\r");
+        break;
+      case '\n':
+        sb_push_str(&sb, "\\n");
+        break;
+      case '\t':
+        sb_push_str(&sb, "\\t");
+        break;
+      case '\"':
+        sb_push_str(&sb, "\\\"");
+        break;
+      case '\\':
+        sb_push_str(&sb, "\\\\");
+        break;
+      default:
+        if (ch <= 0x1F) {
+          sb_push_sv(&sb, tprintf("\\u%04x", ch));
+        } else {
+          sb_push_char(&sb, sv.items[i]);
+        }
+    }
+  }
+  return sb_to_sv(&sb);
+}
+
 /* Hash Table */
 
 HashTable hash_table_init(size_t capacity, KeyEqFunc key_eq,
@@ -536,9 +538,7 @@ JsonValue *json_new_number(double n) {
 JsonValue *json_new_string(String s) {
   JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_STRING;
-  StringBuilder sb = {0}; // This will be freed when json is freed
-  sb_push_sv_escape(&sb, s);
-  value->value.string = sb_to_sv(&sb);
+  value->value.string = sv_escape(s);
   return value;
 }
 
