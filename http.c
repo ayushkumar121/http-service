@@ -335,13 +335,13 @@ void http_response_encode(const HttpResponse *response, StringBuilder *sb) {
 }
 
 typedef struct {
-  int clientfd;
+  int client_fd;
   HttpListenCallback callback;
 } ClientThreadArgs;
 
 void *handle_client(void *arg) {
   ClientThreadArgs *args = arg;
-  const int client_fd = args->clientfd;
+  const int client_fd = args->client_fd;
   const HttpListenCallback callback = args->callback;
   free(arg);
 
@@ -386,7 +386,7 @@ void *handle_client(void *arg) {
   return NULL;
 }
 
-Error http_server_listen(const HttpServer *server, HttpListenCallback callback) {
+Error http_server_listen(const HttpServer *server, const HttpListenCallback callback) {
   assert(server != NULL);
   assert(server->sock_fd > 0);
   assert(callback != NULL);
@@ -404,7 +404,7 @@ Error http_server_listen(const HttpServer *server, HttpListenCallback callback) 
     }
 
     ClientThreadArgs *arg = malloc(sizeof(ClientThreadArgs));
-    arg->clientfd = client_fd;
+    arg->client_fd = client_fd;
     arg->callback = callback;
 
     pthread_t tid;
