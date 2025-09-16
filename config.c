@@ -14,10 +14,11 @@ Error config_load(const char *path) {
   String file_content = sb_to_sv(&sb);
   
   Error err = json_decode(file_content, &config);
+  sb_free(&sb);
+
   if (has_error(err)) {
     return err;
   }
-  sb_free(&sb);
 
   INFO("config loaded successfully");
   json_print(stderr, *config, 4);

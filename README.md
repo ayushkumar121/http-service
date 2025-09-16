@@ -23,3 +23,4 @@ Transfer/sec:     26.43MB
 ## References:
 - http://json.org/ for json encoding/decoding
 - https://en.wikipedia.org/wiki/HTTP
+- https://github.com/tsoding/nob.h for String builder and String View
