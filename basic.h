@@ -161,8 +161,7 @@ void try_(Error err, char *file, int line);
 
 typedef enum {
   JSON_NULL,
-  JSON_TRUE,
-  JSON_FALSE,
+  JSON_BOOL,
   JSON_NUMBER,
   JSON_STRING,
   JSON_OBJECT,
@@ -172,6 +171,7 @@ typedef enum {
 typedef struct JsonObjectEntry JsonObjectEntry;
 typedef struct JsonValue JsonValue;
 typedef double JsonNumber;
+typedef bool JsonBoolean;
 typedef String JsonString;
 typedef ARRAY(JsonValue *) JsonArray;
 typedef ARRAY(JsonObjectEntry) JsonObject;
@@ -179,15 +179,16 @@ typedef ARRAY(JsonObjectEntry) JsonObject;
 typedef struct JsonValue {
   JsonType type;
   union {
+    JsonBoolean boolean;
     JsonNumber number;
     JsonString string;
     JsonArray array;
     JsonObject object;
-  } value;
+  } as;
 } JsonValue;
 
 typedef struct JsonObjectEntry {
-  JsonValue *key;
+  String key;
   JsonValue *value;
 } JsonObjectEntry;
 

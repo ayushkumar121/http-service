@@ -275,7 +275,7 @@ StringPair sv_split_str(String sv, const char *str) {
 }
 
 String sv_clone(String sv) {
-  char *str_copy = realloc(NULL, sv.length + 1);
+  char *str_copy = malloc(sv.length + 1);
   memcpy(str_copy, sv.items, sv.length);
   str_copy[sv.length] = 0;
   return SV2(str_copy, sv.length);
@@ -515,42 +515,43 @@ JsonValue *json_new_null(void) {
 
 JsonValue *json_new_bool(bool b) {
   JsonValue *value = malloc(sizeof(JsonValue));
-  value->type = (b) ? JSON_TRUE : JSON_FALSE;
+  value->type = JSON_BOOL;
+  value->as.boolean = b;
   return value;
 }
 
 JsonValue *json_new_number(double n) {
   JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_NUMBER;
-  value->value.number = n;
+  value->as.number = n;
   return value;
 }
 
 JsonValue *json_new_string(const String s) {
   JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_STRING;
-  value->value.string = sv_escape(s);
+  value->as.string = sv_escape(s);
   return value;
 }
 
 JsonValue *json_new_cstr(char *s) {
   JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_STRING;
-  value->value.string = sv_clone(SV(s));
+  value->as.string = sv_clone(SV(s));
   return value;
 }
 
 JsonValue *json_new_array(void) {
   JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_ARRAY;
-  value->value.array = (JsonArray){0};
+  value->as.array = (JsonArray){0};
   return value;
 }
 
 JsonValue *json_new_object(void) {
   JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_OBJECT;
-  value->value.object = (JsonObject){0};
+  value->as.object = (JsonObject){0};
   return value;
 }
 
@@ -571,7 +572,7 @@ bool json_consume_char(String *sv) {
   return true;
 }
 
-bool json_consume_literal(String *sv, const char *str, size_t n) {
+bool json_consume_literal(String *sv, const char *str, const size_t n) {
   if (sv->length < n)
     return false;
 
@@ -640,6 +641,8 @@ Error json_decode_string(String *sv, JsonValue **out) {
     str.length++;
   }
 
+  if (*sv->items != '\"')
+    return json_error(JsonErrorUnexpectedToken, *sv);
   if (!json_consume_char(sv))
     return json_error(JsonErrorEOF, *sv);
 
@@ -678,7 +681,7 @@ Error json_decode_array(String *sv, JsonValue **out) {
   }
 
   *out = json_new_array();
-  (*out)->value.array = values;
+  (*out)->as.array = values;
   return ErrorNil;
 }
 
@@ -699,21 +702,38 @@ Error json_decode_object(String *sv, JsonValue **out) {
     }
 
     JsonObjectEntry entry = {0};
-    JsonValue *key = NULL;
-    Error err = json_decode_string(sv, &key);
-    if (has_error(err))
-      return err;
-    entry.key = key;
 
-    *sv = sv_trim_left(*sv);
-    if (*sv->items != ':') {
+    // Extracting key
+    if (*sv->items != '\"')
       return json_error(JsonErrorUnexpectedToken, *sv);
-    }
     if (!json_consume_char(sv))
       return json_error(JsonErrorEOF, *sv);
 
+    String key = {0};
+    key.items = sv->items;
+
+    while (sv->length > 0 && *sv->items != '\"') {
+      if (!json_consume_char(sv))
+        return json_error(JsonErrorEOF, *sv);
+      key.length++;
+    }
+
+    if (*sv->items != '\"')
+      return json_error(JsonErrorUnexpectedToken, *sv);
+    if (!json_consume_char(sv))
+      return json_error(JsonErrorEOF, *sv);
+
+    entry.key = sv_clone(key);
+
+    *sv = sv_trim_left(*sv);
+    if (*sv->items != ':')
+      return json_error(JsonErrorUnexpectedToken, *sv);
+    if (!json_consume_char(sv))
+      return json_error(JsonErrorEOF, *sv);
+
+    // Extracting value
     JsonValue *value = NULL;
-    err = json_decode_value(sv, &value);
+    const Error err = json_decode_value(sv, &value);
     if (has_error(err))
       return err;
     entry.value = value;
@@ -728,7 +748,7 @@ Error json_decode_object(String *sv, JsonValue **out) {
   }
 
   *out = json_new_object();
-  (*out)->value.object = object;
+  (*out)->as.object = object;
   return ErrorNil;
 }
 
@@ -781,21 +801,21 @@ Error json_decode(String sv, JsonValue **out) {
 JsonNumber json_get_number(const JsonValue *json) {
   assert(json != NULL);
   assert(json->type == JSON_NUMBER);
-  return json->value.number;
+  return json->as.number;
 }
 
 JsonString json_get_string(const JsonValue *json) {
   assert(json != NULL);
   assert(json->type == JSON_STRING);
-  return json->value.string;
+  return json->as.string;
 }
 
 JsonValue *json_object_get(const JsonValue *json, String key) {
   assert(json != NULL);
   assert(json->type == JSON_OBJECT);
-  for (size_t i = 0; i < json->value.object.length; i++) {
-    JsonObjectEntry entry = json->value.object.items[i];
-    if (sv_equal(entry.key->value.string, key)) {
+  for (size_t i = 0; i < json->as.object.length; i++) {
+    const JsonObjectEntry entry = json->as.object.items[i];
+    if (sv_equal(entry.key, key)) {
       return entry.value;
     }
   }
@@ -828,35 +848,35 @@ JsonValue *json_get(const JsonValue *json, String key) {
   return value;
 }
 
-void json_object_set(JsonValue *json, String key, JsonValue *val) {
+void json_object_set(JsonValue *json, const String key, JsonValue *val) {
   assert(json != NULL);
   assert(json->type == JSON_OBJECT);
-  for (size_t i = 0; i < json->value.object.length; i++) {
-    const JsonObjectEntry entry = json->value.object.items[i];
-    if (sv_equal(entry.key->value.string, key)) {
-      json->value.object.items[i].value = val;
+  for (size_t i = 0; i < json->as.object.length; i++) {
+    const JsonObjectEntry entry = json->as.object.items[i];
+    if (sv_equal(entry.key, key)) {
+      json->as.object.items[i].value = val;
       return;
     }
   }
 
-  array_append(&json->value.object,
-             ((JsonObjectEntry){json_new_string(key), val}));
+  array_append(&json->as.object,
+             ((JsonObjectEntry){sv_clone(key), val}));
 }
 
-bool json_object_remove(JsonValue *json, String key) {
+bool json_object_remove(JsonValue *json, const String key) {
   assert(json != NULL);
   assert(json->type == JSON_OBJECT);
   size_t index = -1;
-  for (size_t i = 0; i < json->value.object.length; i++) {
-    JsonObjectEntry entry = json->value.object.items[i];
-    if (sv_equal(entry.key->value.string, key)) {
+  for (size_t i = 0; i < json->as.object.length; i++) {
+    const JsonObjectEntry entry = json->as.object.items[i];
+    if (sv_equal(entry.key, key)) {
       index = i;
       break;
     }
   }
 
   if (index != -1) {
-    array_remove(&json->value.object, index);
+    array_remove(&json->as.object, index);
     return true;
   }
 
@@ -866,21 +886,21 @@ bool json_object_remove(JsonValue *json, String key) {
 JsonValue *json_array_get(const JsonValue *json, int i) {
   assert(json != NULL);
   assert(json->type == JSON_ARRAY);
-  assert(i < json->value.array.length);
-  return json->value.array.items[i];
+  assert(i < json->as.array.length);
+  return json->as.array.items[i];
 }
 
 void json_array_append(JsonValue *json, JsonValue *val) {
   assert(json != NULL);
   assert(json->type == JSON_ARRAY);
-  array_append(&json->value.array, val);
+  array_append(&json->as.array, val);
 }
 
 void json_array_remove(JsonValue *json, size_t index) {
   assert(json != NULL);
   assert(json->type == JSON_ARRAY);
-  assert(index < json->value.array.length);
-  array_remove(&json->value.array, index);
+  assert(index < json->as.array.length);
+  array_remove(&json->as.array, index);
 }
 
 void sb_push_whitespace(StringBuilder *sb, int indent) {
@@ -894,36 +914,33 @@ void json_encode_(JsonValue json, StringBuilder *sb, int pp, int indent) {
   case JSON_NULL:
     sb_push_str(sb, "null");
     break;
-  case JSON_TRUE:
-    sb_push_str(sb, "true");
-    break;
-  case JSON_FALSE:
-    sb_push_str(sb, "false");
+  case JSON_BOOL:
+    sb_push_str(sb, json.as.boolean ? "true" : "false");
     break;
   case JSON_NUMBER:
-    sb_push_double(sb, json.value.number);
+    sb_push_double(sb, json.as.number);
     break;
   case JSON_STRING:
     sb_push_char(sb, '\"');
-    sb_push_sv(sb, json.value.string);
+    sb_push_sv(sb, json.as.string);
     sb_push_char(sb, '\"');
     break;
 
   case JSON_ARRAY: {
     sb_push_char(sb, '[');
-    if (json.value.array.length > 0 && pp > 0)
+    if (json.as.array.length > 0 && pp > 0)
       sb_push_char(sb, '\n');
 
-    for (int i = 0; i < json.value.array.length; i++) {
+    for (int i = 0; i < json.as.array.length; i++) {
       if (pp > 0)
         sb_push_whitespace(sb, indent);
-      json_encode_(*json.value.array.items[i], sb, pp, indent + pp);
-      if (i < json.value.array.length - 1)
+      json_encode_(*json.as.array.items[i], sb, pp, indent + pp);
+      if (i < json.as.array.length - 1)
         sb_push_char(sb, ',');
       if (pp > 0)
         sb_push_char(sb, '\n');
     }
-    if (json.value.array.length > 0 && pp > 0)
+    if (json.as.array.length > 0 && pp > 0)
       sb_push_whitespace(sb, indent - pp);
     sb_push_char(sb, ']');
     break;
@@ -931,21 +948,23 @@ void json_encode_(JsonValue json, StringBuilder *sb, int pp, int indent) {
 
   case JSON_OBJECT: {
     sb_push_char(sb, '{');
-    if (json.value.object.length > 0 && pp > 0)
+    if (json.as.object.length > 0 && pp > 0)
       sb_push_char(sb, '\n');
 
-    for (int i = 0; i < json.value.object.length; i++) {
+    for (int i = 0; i < json.as.object.length; i++) {
       if (pp > 0)
         sb_push_whitespace(sb, indent);
-      json_encode_(*json.value.object.items[i].key, sb, pp, indent + pp);
+      sb_push_char(sb, '\"');
+      sb_push_sv(sb, json.as.object.items[i].key);
+      sb_push_char(sb, '\"');
       sb_push_char(sb, ':');
-      json_encode_(*json.value.object.items[i].value, sb, pp, indent + pp);
-      if (i < json.value.array.length - 1)
+      json_encode_(*json.as.object.items[i].value, sb, pp, indent + pp);
+      if (i < json.as.array.length - 1)
         sb_push_char(sb, ',');
       if (pp > 0)
         sb_push_char(sb, '\n');
     }
-    if (json.value.object.length > 0 && pp > 0)
+    if (json.as.object.length > 0 && pp > 0)
       sb_push_whitespace(sb, indent - pp);
     sb_push_char(sb, '}');
     break;
@@ -969,33 +988,35 @@ void json_free(JsonValue *json) {
 
   switch (json->type) {
   case JSON_NULL:
-  case JSON_TRUE:
-  case JSON_FALSE:
+  case JSON_BOOL:
   case JSON_NUMBER:
     free(json);
     break;
   case JSON_STRING:
-    free(json->value.string.items);
+    free(json->as.string.items);
     free(json);
     break;
 
   case JSON_ARRAY: {
-    for (int i = 0; i < json->value.array.length; i++) {
-      json_free(json->value.array.items[i]);
+    if (json->as.array.items) {
+      for (int i = 0; i < json->as.array.length; i++) {
+        json_free(json->as.array.items[i]);
+      }
+      free(json->as.array.items);
     }
-    if (json->value.array.items)
-      free(json->value.array.items);
     free(json);
     break;
   }
 
   case JSON_OBJECT: {
-    for (int i = 0; i < json->value.object.length; i++) {
-      json_free(json->value.object.items[i].key);
-      json_free(json->value.object.items[i].value);
+    if (json->as.object.items) {
+      for (int i = 0; i < json->as.object.length; i++) {
+        if (json->as.object.items[i].key.items != NULL)
+          free(json->as.object.items[i].key.items);
+        json_free(json->as.object.items[i].value);
+      }
+      free(json->as.object.items);
     }
-    if (json->value.object.items)
-      free(json->value.object.items);
     free(json);
     break;
   }
