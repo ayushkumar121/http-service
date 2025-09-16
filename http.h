@@ -33,11 +33,12 @@ typedef struct {
   bool keep_alive;          // Whether to keep the connection alive
 } HttpResponse;
 
-typedef HttpResponse (*HttpListenCallback)(HttpRequest *);
+typedef HttpResponse (*HttpListenCallback)(const HttpRequest *);
 
 #define HTTP_DEFAULT_PORT 8000
 #define HTTP_BACKLOG 1024
 #define HTTP_HEADER_CAPACITY 20
+#define HTTP_READ_BUFFER_SIZE 512
 
 typedef ARRAY(String) HeaderValues;
 
@@ -59,6 +60,7 @@ Error http_server_listen(const HttpServer *server, HttpListenCallback callback);
 void http_server_free(const HttpServer *server);
 
 HttpResponse http_response_init(int status_code);
-HttpResponse http_json_response(int status, HttpRequest *request, JsonValue *json);
-HttpResponse http_text_response(int status, HttpRequest *request, String body);
+HttpResponse http_json_response(int status, JsonValue *json);
+HttpResponse http_text_response(int status, String body);
+HttpResponse http_status_response(int status);
 #endif

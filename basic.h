@@ -31,9 +31,10 @@
     if ((array)->capacity < (array)->length + 1) {                             \
       (array)->capacity =                                                      \
           ((array)->capacity == 0) ? ARRAY_INIT_CAP : (array)->capacity * 1.5; \
-      (array)->items = realloc(                                                \
+      void* ptr = realloc(                                                     \
           (array)->items, (array)->capacity * sizeof(*(array)->items));        \
-      assert((array)->items != NULL);                                           \
+      assert(ptr != NULL);                                                     \
+      (array)->items = ptr;                                                    \
     }                                                                          \
     (array)->items[(array)->length++] = (item);                                \
   } while (0)
@@ -84,8 +85,9 @@ StringBuilder sb_clone(const StringBuilder *sb);
 #define SV_Fmt "%.*s"
 #define SV_Arg(sv) (int)(sv).length, (sv).items
 
-String sv_new(char *str);
-String sv_new2(char *str, size_t len);
+#define SV2(s, len) (String){len, s}
+#define SV(s) (String){sizeof(s)-1, s}
+
 bool sv_equal(String s1, String s2);
 bool sv_equal_ignore_case(String s1, String s2);
 ssize_t sv_find(String sv, const char *str);
@@ -153,9 +155,9 @@ void try_(Error err, char *file, int line);
 // JSON Encoding & Decoding
 
 #define JsonErrorEOF                                                           \
-  (Error) { sv_new("json eof") }
+  (Error) { SV("json eof") }
 #define JsonErrorUnexpectedToken                                               \
-  (Error) { sv_new("json unexpected token") }
+  (Error) { SV("json unexpected token") }
 
 typedef enum {
   JSON_NULL,
@@ -217,11 +219,11 @@ void json_free(JsonValue *json);
 // File I/O
 
 #define ErrorReadFile                                                          \
-  (Error) { sv_new("failed to read file") }
+  (Error) { SV("failed to read file") }
 #define ErrorWriteFile                                                         \
-  (Error) { sv_new("failed to write file") }
+  (Error) { SV("failed to write file") }
 #define ErrorFileEmpty                                                         \
-  (Error) { sv_new("file is empty") }
+  (Error) { SV("file is empty") }
 
 size_t file_size(const char *path);
 bool file_exists(const char *path);

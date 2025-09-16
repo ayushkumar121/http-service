@@ -138,8 +138,6 @@ void http_response_write(const int client_fd, const char *buffer, const size_t l
   }
 }
 
-#define HTTP_READ_BUFFER_SIZE 512
-
 typedef enum {
   HttpErrorNil,
   HttpErrorEOF,
@@ -152,17 +150,17 @@ typedef enum {
 String http_error_to_string(const HttpError err) {
   switch (err) {
   case HttpErrorNil:
-    return sv_new("nil");
+    return SV("nil");
   case HttpErrorEOF:
-    return sv_new("eof");
+    return SV("eof");
   case HttpErrorConnectionReset:
-    return sv_new("connection closed");
+    return SV("connection closed");
   case HttpErrorRead:
-    return sv_new("read error");
+    return SV("read error");
   case HttpErrorParse:
-    return sv_new("parse error");
+    return SV("parse error");
   default:
-    return sv_new("unknown");
+    return SV("unknown");
   }
 }
 
@@ -189,7 +187,7 @@ HttpError http_parse_request(const int client, StringBuilder *sb,
     if (n == 0) {
       return HttpErrorEOF;
     }
-    sb_push_sv(sb, sv_new2(buffer, n));
+    sb_push_sv(sb, SV2(buffer, n));
     header_end = sv_find(sb_to_sv(sb), CRLF CRLF);
     if (header_end != -1) {
       break;
@@ -226,7 +224,7 @@ HttpError http_parse_request(const int client, StringBuilder *sb,
       break;
     }
 
-    if (sv_equal(key, sv_new("Content-Length"))) {
+    if (sv_equal(key, SV("Content-Length"))) {
       char* endptr = NULL;
       content_length = sv_to_long(value, &endptr);
       if (endptr != value.items + value.length) {
@@ -255,9 +253,9 @@ HttpError http_parse_request(const int client, StringBuilder *sb,
     if (n == 0) {
       return HttpErrorEOF;
     }
-    sb_push_sv(sb, sv_new2(buffer, n));
+    sb_push_sv(sb, SV2(buffer, n));
   }
-  request->body = sv_new2(sb->items + header_end + 4, content_length);
+  request->body = SV2(sb->items + header_end + 4, content_length);
   request->raw_request = sb_to_sv(sb);
 
   return 0;
@@ -266,23 +264,23 @@ HttpError http_parse_request(const int client, StringBuilder *sb,
 String http_status_code_to_string(const int status_code) {
   switch (status_code) {
   case 200:
-    return sv_new("OK");
+    return SV("OK");
   case 201:
-    return sv_new("Created");
+    return SV("Created");
   case 204:
-    return sv_new("No Content");
+    return SV("No Content");
   case 301:
-    return sv_new("Moved Permanently");
+    return SV("Moved Permanently");
   case 400:
-    return sv_new("Bad Request");
+    return SV("Bad Request");
   case 404:
-    return sv_new("Not Found");
+    return SV("Not Found");
   case 405:
-    return sv_new("Method Not Allowed");
+    return SV("Method Not Allowed");
   case 500:
-    return sv_new("Internal Server Error");
+    return SV("Internal Server Error");
   default:
-    return sv_new("Unknown");
+    return SV("Unknown");
   }
 }
 
@@ -301,12 +299,12 @@ void http_response_encode(const HttpResponse *response, StringBuilder *sb) {
   sb_push_str(sb, " ");
   sb_push_sv(sb, http_status_code_to_string(response->status_code));
   sb_push_str(sb, CRLF);
+  sb_push_str(sb, "Content-Length: ");
+  sb_push_long(sb, (long)response->body.length);
+  sb_push_str(sb, CRLF);
   if (response->body.length > 0) {
     sb_push_str(sb, "Content-Type: ");
     sb_push_sv(sb, response->content_type);
-    sb_push_str(sb, CRLF);
-    sb_push_str(sb, "Content-Length: ");
-    sb_push_long(sb, response->body.length);
     sb_push_str(sb, CRLF);
   }
   if (response->keep_alive) {
@@ -335,7 +333,9 @@ void http_response_encode(const HttpResponse *response, StringBuilder *sb) {
     }
   }
   sb_push_str(sb, CRLF);
-  sb_push_sv(sb, response->body);
+  if (response->body.length > 0) {
+    sb_push_sv(sb, response->body);
+  }
 }
 
 typedef struct {
@@ -438,10 +438,9 @@ HttpResponse http_response_init(int status_code) {
   return response;
 }
 
-HttpResponse http_json_response(int status, HttpRequest *request,
-                                JsonValue *json) {
+HttpResponse http_json_response(const int status, JsonValue *json) {
   HttpResponse response = http_response_init(status);
-  response.content_type = sv_new("application/json");
+  response.content_type = SV("application/json");
 
   StringBuilder sb = {0};
   json_encode(*json, &sb, 0);
@@ -452,10 +451,16 @@ HttpResponse http_json_response(int status, HttpRequest *request,
   return response;
 }
 
-HttpResponse http_text_response(int status, HttpRequest *request, String body) {
+HttpResponse http_text_response(const int status, String body) {
   HttpResponse response = http_response_init(status);
-  response.content_type = sv_new("text/plain");
+  response.content_type = SV("text/plain");
   response.body = body;
+  response.free_body_after_use = false;
+  return response;
+}
+
+HttpResponse http_status_response(const int status) {
+  HttpResponse response = http_response_init(status);
   response.free_body_after_use = false;
   return response;
 }

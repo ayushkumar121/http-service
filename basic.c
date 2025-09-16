@@ -40,7 +40,7 @@ void treset() { temp_allocated = 0; }
 
 // Error Handling
 
-Error error(char *message) { return error_sv(sv_new(message)); }
+Error error(char *message) { return error_sv(SV(message)); }
 Error error_sv(String message) { return (Error){.message = message}; }
 
 Error errorf(const char *format, ...) {
@@ -67,7 +67,9 @@ void try_(Error err, char *file, int line) {
 
 void sb_resize(StringBuilder *sb, size_t new_capacity) {
   sb->capacity = new_capacity;
-  sb->items = realloc(sb->items, sb->capacity + 1);
+  void* ptr = realloc(sb->items, sb->capacity + 1);
+  assert(ptr != NULL);
+  sb->items = ptr;
 }
 
 void sb_free(const StringBuilder *sb) { array_free(sb); }
@@ -110,23 +112,23 @@ void sb_push_char(StringBuilder *sb, char ch) {
   sb->items[sb->length] = 0;
 }
 
-void sb_push_long(StringBuilder *sb, long i) {
-  if (i == 0) {
+void sb_push_long(StringBuilder *sb, long l) {
+  if (l == 0) {
     sb_push_char(sb, '0');
     return;
   }
 
-  bool neg = i < 0;
+  const bool neg = l < 0;
   if (neg)
-    i *= -1;
+    l *= -1;
 
-  int k = (neg) ? log10(i) + 2 : log10(i) + 1;
+  const long k = (long)((neg) ? log10((double)l) + 2 : log10((double)l) + 1);
   sb_resize(sb, sb->capacity + k);
 
-  int j = k;
-  while (i != 0) {
-    sb->items[sb->length + j - 1] = (i % 10) + '0';
-    i = i / 10;
+  long j = k;
+  while (l != 0) {
+    sb->items[sb->length + j - 1] = (char)((l % 10) + '0');
+    l = l / 10;
     j -= 1;
   }
 
@@ -137,12 +139,12 @@ void sb_push_long(StringBuilder *sb, long i) {
 }
 
 void sb_push_double(StringBuilder *sb, double d) {
-  // Handling int part
-  int i = (d < 0) ? ceil(d) : floor(d);
-  sb_push_long(sb, i);
+  // Handling integral part
+  const long l = (long)((d < 0) ? ceil(d) : floor(d));
+  sb_push_long(sb, l);
 
   // Handling fractional part
-  int f = ((int)d - i) * 1000000;
+  long f = ((long)d - l) * 1000000;
   if (f < 0)
     f *= -1;
   if (f > 0) {
@@ -162,17 +164,6 @@ StringBuilder sb_clone(const StringBuilder *sb) {
 }
 
 /* String View */
-
-String sv_new2(char *str, size_t len) {
-  return (String){.length = len, .items = str};
-}
-
-String sv_new(char *str) {
-  String sv = {0};
-  sv.items = str;
-  sv.length = strlen(str);
-  return sv;
-}
 
 bool sv_equal(String s1, String s2) {
   if (s1.length != s2.length)
@@ -230,8 +221,8 @@ StringPair sv_split_delim(String sv, char delim) {
     return result;
   }
 
-  result.first = sv_new2(sv.items, i);
-  result.second = sv_new2(sv.items + i + 1, sv.length - i - 1);
+  result.first = SV2(sv.items, i);
+  result.second = SV2(sv.items + i + 1, sv.length - i - 1);
 
   return result;
 }
@@ -277,8 +268,8 @@ StringPair sv_split_str(String sv, const char *str) {
     return result;
   }
 
-  result.first = sv_new2(sv.items, i);
-  result.second = sv_new2(sv.items + i + n, sv.length - i - n);
+  result.first = SV2(sv.items, i);
+  result.second = SV2(sv.items + i + n, sv.length - i - n);
 
   return result;
 }
@@ -287,7 +278,7 @@ String sv_clone(String sv) {
   char *str_copy = realloc(NULL, sv.length + 1);
   memcpy(str_copy, sv.items, sv.length);
   str_copy[sv.length] = 0;
-  return sv_new2(str_copy, sv.length);
+  return SV2(str_copy, sv.length);
 }
 
 String tprintf(const char *format, ...) {
@@ -305,7 +296,7 @@ String tprintf(const char *format, ...) {
   va_end(args2);
   va_end(args);
 
-  return sv_new2(str, n);
+  return SV2(str, n);
 }
 
 String tvprintf(const char *format, va_list args) {
@@ -320,7 +311,7 @@ String tvprintf(const char *format, va_list args) {
 
   va_end(args2);
 
-  return sv_new2(str, n);
+  return SV2(str, n);
 }
 
 long sv_to_long(String sv, char **endptr) {
@@ -535,7 +526,7 @@ JsonValue *json_new_number(double n) {
   return value;
 }
 
-JsonValue *json_new_string(String s) {
+JsonValue *json_new_string(const String s) {
   JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_STRING;
   value->value.string = sv_escape(s);
@@ -545,7 +536,7 @@ JsonValue *json_new_string(String s) {
 JsonValue *json_new_cstr(char *s) {
   JsonValue *value = malloc(sizeof(JsonValue));
   value->type = JSON_STRING;
-  value->value.string = sv_clone(sv_new(s));
+  value->value.string = sv_clone(SV(s));
   return value;
 }
 
@@ -1090,5 +1081,5 @@ String random_id(void) {
     id[i] = hex_chars[raw[i] % HEX_CHARSET_LEN];
   }
   id[RANDOM_ID_LEN] = 0;
-  return sv_new2(id, RANDOM_ID_LEN);
+  return SV2(id, RANDOM_ID_LEN);
 }

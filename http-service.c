@@ -2,29 +2,33 @@
 #include "http.h"
 #include "config.h"
 
-HttpResponse http_listen_callback(HttpRequest* request) {
-  JsonValue* json = json_new_object();
-  json_object_set(json, sv_new("request_id"), json_new_string(request->request_id));
-  json_object_set(json, sv_new("proto"), json_new_string(request->proto));
-  json_object_set(json, sv_new("method"), json_new_string(request->method));
-  json_object_set(json, sv_new("path"), json_new_string(request->path));
-  json_object_set(json, sv_new("body"), json_new_string(request->body));
+HttpResponse http_listen_callback(const HttpRequest* request) {
+  if (sv_equal(SV("/echo"), request->path)) {
+    JsonValue* json = json_new_object();
+    json_object_set(json, SV("request_id"), json_new_string(request->request_id));
+    json_object_set(json, SV("proto"), json_new_string(request->proto));
+    json_object_set(json, SV("method"), json_new_string(request->method));
+    json_object_set(json, SV("path"), json_new_string(request->path));
+    json_object_set(json, SV("body"), json_new_string(request->body));
 
-  JsonValue* headers = json_new_object();
-  for (size_t i=0; i<request->headers.capacity; i++) {
-    HashTableEntry entry = request->headers.entries[i];
-    if (entry.key != NULL) {
-      HeaderValues* values = (HeaderValues*) entry.value;
-      JsonValue* header_values = json_new_array();
-      for (size_t j = 0; j<values->length; j++) {
-        json_array_append(header_values, json_new_string(values->items[j]));
+    JsonValue* headers = json_new_object();
+    for (size_t i=0; i<request->headers.capacity; i++) {
+      const HashTableEntry entry = request->headers.entries[i];
+      if (entry.key != NULL) {
+        const HeaderValues* values = entry.value;
+        JsonValue* header_values = json_new_array();
+        for (size_t j = 0; j<values->length; j++) {
+          json_array_append(header_values, json_new_string(values->items[j]));
+        }
+        json_object_set(headers, *(String*)entry.key, header_values);
       }
-      json_object_set(headers, *(String*)entry.key, header_values);
     }
+    json_object_set(json, SV("headers"), headers);
+
+    return http_json_response(200, json);
   }
-  json_object_set(json, sv_new("headers"), headers);
-  
-  return http_json_response(200, request, json);
+
+  return http_status_response(404);
 }
 
 int main(int argc, char** argv) {
@@ -32,7 +36,7 @@ int main(int argc, char** argv) {
 
   HttpServer server = {0};
   HttpServerInitOptions options = http_server_init_defaults();
-  options.port = config_get_int(sv_new("server.port"), 8080); 
+  options.port = config_get_int(SV("server.port"), 8080); 
 
   try(http_server_init_opts(&server, options));
   try(http_server_listen(&server, http_listen_callback));
