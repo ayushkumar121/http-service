@@ -1077,7 +1077,7 @@ Error write_entire_file(const char *path, String sv) {
 #define HEX_CHARSET_LEN 16
 const char hex_chars[] = "0123456789abcdef";
 
-Error get_random_bytes(char* buf, size_t n) {
+Error random_bytes(char* buf, size_t n) {
   assert(buf != NULL);
   int fd = open("/dev/urandom", O_RDONLY);
   if (fd == -1) {
@@ -1095,7 +1095,7 @@ Error get_random_bytes(char* buf, size_t n) {
 
 String random_id(void) {
   unsigned char raw[RANDOM_ID_LEN];
-  try(get_random_bytes((char*)raw, RANDOM_ID_LEN));
+  try(random_bytes((char*)raw, RANDOM_ID_LEN));
 
   char* id = talloc(RANDOM_ID_LEN+1);
   for (size_t i = 0; i < RANDOM_ID_LEN; ++i) {

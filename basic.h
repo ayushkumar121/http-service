@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define DEBUG(format, ...) fprintf(stderr, "DEBUG: " format "\n", ##__VA_ARGS__)
 #define INFO(format, ...) fprintf(stderr, "INFO: " format "\n", ##__VA_ARGS__)
@@ -234,7 +235,81 @@ Error write_entire_file(const char *path, String sv);
 // UUID
 #define RANDOM_ID_LEN 12
 
-Error get_random_bytes(char* buf, size_t n);
+Error random_bytes(char* buf, size_t n);
 String random_id(void);
+
+// Priority Queue
+#define PQUEUE(T) \
+  struct { \
+    ARRAY(T) arr; \
+    int (*cmp)(const T*, const T*); \
+  }
+
+#define pqueue_free(pq) array_free(&(pq)->arr)
+
+#define pqueue_empty(pq) ((pq)->arr.length == 0)
+
+#define pqueue_swap(pq, i, j) \
+  do { \
+    typeof((pq)->arr.items[0]) temp = (pq)->arr.items[i]; \
+    (pq)->arr.items[i] = (pq)->arr.items[j]; \
+    (pq)->arr.items[j] = temp; \
+  } while (0)
+
+#define pqueue_heapify_up(pq, idx) \
+  do { \
+    size_t _i = (idx); \
+    while (_i > 0) { \
+      size_t _parent = (_i - 1) / 2; \
+      if ((pq)->cmp(&(pq)->arr.items[_i], &(pq)->arr.items[_parent]) <= 0) \
+        break; \
+      pqueue_swap(pq, _i, _parent); \
+      _i = _parent; \
+    } \
+  } while (0)
+
+#define pqueue_heapify_down(pq, idx) \
+  do { \
+    size_t _i = (idx); \
+    while (1) { \
+      size_t _left = 2 * _i + 1; \
+      size_t _right = 2 * _i + 2; \
+      size_t _largest = _i; \
+      \
+      if (_left < (pq)->arr.length && \
+          (pq)->cmp(&(pq)->arr.items[_left], &(pq)->arr.items[_largest]) > 0) \
+        _largest = _left; \
+      if (_right < (pq)->arr.length && \
+          (pq)->cmp(&(pq)->arr.items[_right], &(pq)->arr.items[_largest]) > 0) \
+        _largest = _right; \
+      \
+      if (_largest == _i) break; \
+      \
+      pqueue_swap(pq, _i, _largest); \
+      _i = _largest; \
+    } \
+  } while (0)
+
+#define pqueue_push(pq, item) \
+  do { \
+    array_append(&(pq)->arr, item); \
+    pqueue_heapify_up(pq, (pq)->arr.length - 1); \
+  } while (0)
+
+#define pqueue_pop(pq, out) \
+  do { \
+    assert((pq)->arr.length > 0); \
+    if (out) *(out) = (pq)->arr.items[0]; \
+    (pq)->arr.items[0] = (pq)->arr.items[(pq)->arr.length - 1]; \
+    (pq)->arr.length--; \
+    if ((pq)->arr.length > 0) \
+      pqueue_heapify_down(pq, 0); \
+  } while (0)
+
+#define pqueue_peek(pq, out) \
+  do { \
+    assert((pq)->arr.length > 0); \
+    if (out) *(out) = (pq)->arr.items[0]; \
+  } while (0)
 
 #endif // BASIC_H
